@@ -19,7 +19,7 @@ public abstract class AWTVKCanvas extends Canvas {
         String platformClassName;
         switch (Platform.get()) {
         case WINDOWS:
-            platformClassName = "org.lwjgl.vulkan.swt.PlatformWin32VKCanvas";
+            platformClassName = "org.lwjgl.vulkan.awt.PlatformWin32VKCanvas";
             break;
         default:
             throw new AssertionError("NYI");
