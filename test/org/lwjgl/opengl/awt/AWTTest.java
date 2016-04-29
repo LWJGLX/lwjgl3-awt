@@ -10,7 +10,9 @@ public class AWTTest {
 		JFrame frame = new JFrame("AWT test");
 		frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 		frame.setLayout(new BorderLayout());
-		frame.add(new AWTGLCanvas() {
+		GLData data = new GLData();
+		data.samples = 4;
+		frame.add(new AWTGLCanvas(data) {
 			public void initGL() {
 			    createCapabilities();
 			    glClearColor(0.3f, 0.4f, 0.5f, 1);

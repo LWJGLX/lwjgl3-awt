@@ -221,7 +221,6 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 User32.WS_OVERLAPPED | User32.WS_CAPTION
                 | User32.WS_SYSMENU | User32.WS_MINIMIZEBOX, User32.CW_USEDEFAULT, User32.CW_USEDEFAULT, 800, 600,
                 NULL, NULL, HINSTANCE, defaultWndProc.address());
-        System.err.println(hwnd);
         return hwnd;
     }
 

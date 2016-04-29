@@ -9,16 +9,21 @@ public abstract class AWTGLCanvas extends Canvas {
 
     private PlatformGLCanvas platformGLCanvas = new PlatformWin32GLCanvas();
     protected long context;
+    private final GLData data;
+    private final GLData effective = new GLData();
+
+    protected AWTGLCanvas(GLData data) {
+        this.data = data;
+    }
 
     protected AWTGLCanvas() {
+        this(new GLData());
     }
 
     @Override
     public void paint(Graphics g) {
         boolean created = false;
         if (context == 0L) {
-            GLData data = new GLData();
-            GLData effective = new GLData();
             try {
                 context = platformGLCanvas.create(this, data, effective);
                 created = true;
