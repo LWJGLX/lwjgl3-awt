@@ -1,8 +1,11 @@
 package org.lwjgl.opengl.awt;
 
 import java.awt.BorderLayout;
+import java.awt.Dimension;
+
 import static org.lwjgl.opengl.GL.*;
 import static org.lwjgl.opengl.GL11.*;
+
 import javax.swing.JFrame;
 
 public class AWTTest {
@@ -10,6 +13,7 @@ public class AWTTest {
 		JFrame frame = new JFrame("AWT test");
 		frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 		frame.setLayout(new BorderLayout());
+		frame.setPreferredSize(new Dimension(600, 600));
 		GLData data = new GLData();
 		data.samples = 4;
 		frame.add(new AWTGLCanvas(data) {
@@ -34,6 +38,7 @@ public class AWTTest {
 			    this.repaint();
 			}
 		}, BorderLayout.CENTER);
+		frame.pack();
 		frame.setVisible(true);
 	}
 }
