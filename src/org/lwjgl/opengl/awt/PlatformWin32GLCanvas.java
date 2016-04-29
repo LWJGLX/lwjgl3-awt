@@ -6,6 +6,7 @@ import static org.lwjgl.system.windows.WindowsLibrary.HINSTANCE;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.HashSet;
 import java.util.Set;
@@ -64,6 +65,8 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
     }
 
     private long hwnd;
+    private long wglDelayBeforeSwapNVAddr = 0L;
+    private boolean wglDelayBeforeSwapNVAddr_set = false;
 
     private static boolean atLeast32(int major, int minor) {
         return major == 3 && minor >= 2 || major > 3;
@@ -213,16 +216,17 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         String className = "AWTAPPWNDCLASS";
         WNDCLASSEX in = WNDCLASSEX.calloc();
         in.cbSize(WNDCLASSEX.SIZEOF);
-        in.style(User32.CS_HREDRAW | User32.CS_VREDRAW);
+        in.style(0);
         in.lpfnWndProc(defaultWndProc);
         in.cbWndExtra(0);
         in.hInstance(HINSTANCE);
-        in.lpszClassName(MemoryUtil.memUTF16(className));
+        ByteBuffer classNameBuffer = MemoryUtil.memUTF16(className);
+        in.lpszClassName(classNameBuffer);
         User32.RegisterClassEx(in);
-        long hwnd = User32.CreateWindowEx(User32.WS_EX_APPWINDOW, className, "",  
-                User32.WS_OVERLAPPED | User32.WS_CAPTION
-                | User32.WS_SYSMENU | User32.WS_MINIMIZEBOX, User32.CW_USEDEFAULT, User32.CW_USEDEFAULT, 800, 600,
-                NULL, NULL, HINSTANCE, defaultWndProc.address());
+        long hwnd = User32.CreateWindowEx(User32.WS_EX_APPWINDOW, className, "", 0, User32.CW_USEDEFAULT, User32.CW_USEDEFAULT, 800, 600, NULL, NULL,
+                HINSTANCE, defaultWndProc.address());
+        MemoryUtil.memFree(classNameBuffer);
+        in.free();
         return hwnd;
     }
 
@@ -230,6 +234,8 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
         try {
             int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
+            if ((lock & JAWT_LOCK_ERROR) != 0)
+                throw new AWTException("JAWT_DrawingSurface_Lock() failed");
             try {
                 JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds.GetDrawingSurfaceInfo(), ds);
                 try {
@@ -860,6 +866,20 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         boolean ret = GDI32.SwapBuffers(hdc);
         User32.ReleaseDC(hwnd, hdc);
         return ret;
+    }
+
+    public boolean delayBeforeSwapNV(float seconds) {
+        if (!wglDelayBeforeSwapNVAddr_set) {
+            wglDelayBeforeSwapNVAddr = WGL.wglGetProcAddress("wglDelayBeforeSwapNV");
+            wglDelayBeforeSwapNVAddr_set = true;
+        }
+        if (wglDelayBeforeSwapNVAddr == 0L) {
+            throw new UnsupportedOperationException("wglDelayBeforeSwapNV is unavailable");
+        }
+        long hDC = User32.GetDC(hwnd);
+        int ret = JNI.callPI(wglDelayBeforeSwapNVAddr, hDC, seconds);
+        User32.ReleaseDC(hwnd, hDC);
+        return ret == 1;
     }
 
 }

@@ -16,6 +16,7 @@ public class AWTTest {
 		frame.setPreferredSize(new Dimension(600, 600));
 		GLData data = new GLData();
 		data.samples = 4;
+		data.swapInterval = 0;
 		frame.add(new AWTGLCanvas(data) {
 			public void initGL() {
 			    createCapabilities();
@@ -29,10 +30,10 @@ public class AWTTest {
 			    glViewport(0, 0, w, h);
 			    glBegin(GL_QUADS);
 			    glColor3f(0.4f, 0.6f, 0.8f);
-			    glVertex2f(-0.5f / aspect, 0.0f);
-			    glVertex2f(0, -0.5f);
-			    glVertex2f(+0.5f / aspect, 0);
-			    glVertex2f(0, +0.5f);
+			    glVertex2f(-0.75f / aspect, 0.0f);
+			    glVertex2f(0, -0.75f);
+			    glVertex2f(+0.75f / aspect, 0);
+			    glVertex2f(0, +0.75f);
 			    glEnd();
 			    swapBuffers();
 			    this.repaint();

@@ -9,4 +9,5 @@ public interface PlatformGLCanvas {
     boolean makeCurrent(long context);
     boolean isCurrent(long context);
     boolean swapBuffers();
+    boolean delayBeforeSwapNV(float seconds);
 }

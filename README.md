@@ -13,6 +13,7 @@ Support for:
 - context flush control
 - robust buffer access (with application/share-group isolation)
 - sync'ing buffer swaps over multiple windows and cards - Nvidia only
+- delay before swap - Nvidia only
 
 ## Why does it exist?
 
