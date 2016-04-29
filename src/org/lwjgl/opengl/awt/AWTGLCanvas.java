@@ -9,8 +9,8 @@ import org.lwjgl.system.Platform;
 public abstract class AWTGLCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
 
-    private static PlatformGLCanvas platformCanvas;
-    static {
+    private PlatformGLCanvas platformCanvas;
+    {
         String platformClassName;
         switch (Platform.get()) {
         case WINDOWS:
@@ -56,13 +56,13 @@ public abstract class AWTGLCanvas extends Canvas {
                 throw new RuntimeException();
             }
         }
-        platformCanvas.makeCurrent(this, context);
+        platformCanvas.makeCurrent(context);
         try {
             if (created)
                 initGL();
             paintGL();
         } finally {
-            platformCanvas.makeCurrent(null, 0L);
+            platformCanvas.makeCurrent(0L);
         }
     }
 
@@ -77,7 +77,7 @@ public abstract class AWTGLCanvas extends Canvas {
     public abstract void paintGL();
 
     public final void swapBuffers() {
-        platformCanvas.swapBuffers(this);
+        platformCanvas.swapBuffers();
     }
 
 }

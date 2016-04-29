@@ -63,6 +63,8 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
             throw new AssertionError("GetAWT failed");
     }
 
+    private long hwnd;
+
     private static boolean atLeast32(int major, int minor) {
         return major == 3 && minor >= 2 || major > 3;
     }
@@ -232,12 +234,12 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds.GetDrawingSurfaceInfo(), ds);
                 try {
                     JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
-                    long hdc = dsiWin.hwnd();
-                    long hdcDummy = createDummyWindow();
+                    this.hwnd = dsiWin.hwnd();
+                    long hwndDummy = createDummyWindow();
                     try {
-                        return create(hdc, hdcDummy, attribs, effective);
+                        return create(hwnd, hwndDummy, attribs, effective);
                     } finally {
-                        User32.DestroyWindow(hdcDummy);
+                        User32.DestroyWindow(hwndDummy);
                     }
                 } finally {
                     JAWT_DrawingSurface_FreeDrawingSurfaceInfo(ds.FreeDrawingSurfaceInfo(), dsi);
@@ -838,28 +840,13 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
     }
 
     @Override
-    public boolean makeCurrent(Canvas canvas, long context) {
-        if (canvas == null && context == 0L)
+    public boolean makeCurrent(long context) {
+        if (context == 0L)
             return WGL.wglMakeCurrent(0L, 0L);
-        JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
-        try {
-            int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
-            try {
-                JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds.GetDrawingSurfaceInfo(), ds);
-                try {
-                    JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
-                    long hdc = dsiWin.hdc();
-                    boolean ret = WGL.wglMakeCurrent(hdc, context);
-                    return ret;
-                } finally {
-                    JAWT_DrawingSurface_FreeDrawingSurfaceInfo(ds.FreeDrawingSurfaceInfo(), dsi);
-                }
-            } finally {
-                JAWT_DrawingSurface_Unlock(ds.Unlock(), ds);
-            }
-        } finally {
-            JAWT_FreeDrawingSurface(awt.FreeDrawingSurface(), ds);
-        }
+        long hdc = User32.GetDC(hwnd);
+        boolean ret = WGL.wglMakeCurrent(hdc, context);
+        User32.ReleaseDC(hwnd, hdc);
+        return ret;
     }
 
     @Override
@@ -868,26 +855,11 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         return ret;
     }
 
-    public boolean swapBuffers(Canvas canvas) {
-        JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
-        try {
-            int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
-            try {
-                JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds.GetDrawingSurfaceInfo(), ds);
-                try {
-                    JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
-                    long hdc = dsiWin.hdc();
-                    boolean ret = GDI32.SwapBuffers(hdc);
-                    return ret;
-                } finally {
-                    JAWT_DrawingSurface_FreeDrawingSurfaceInfo(ds.FreeDrawingSurfaceInfo(), dsi);
-                }
-            } finally {
-                JAWT_DrawingSurface_Unlock(ds.Unlock(), ds);
-            }
-        } finally {
-            JAWT_FreeDrawingSurface(awt.FreeDrawingSurface(), ds);
-        }
+    public boolean swapBuffers() {
+        long hdc = User32.GetDC(hwnd);
+        boolean ret = GDI32.SwapBuffers(hdc);
+        User32.ReleaseDC(hwnd, hdc);
+        return ret;
     }
 
 }
