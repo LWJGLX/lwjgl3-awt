@@ -39,6 +39,7 @@ import org.lwjgl.system.APIUtil;
 import org.lwjgl.system.APIUtil.APIVersion;
 import org.lwjgl.system.Checks;
 import org.lwjgl.system.JNI;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
@@ -240,9 +241,11 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
                     JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
                     this.hwnd = dsiWin.hwnd();
                     long hwndDummy = createDummyWindow();
+                    MemoryStack stack = MemoryStack.stackGet(); int ptr = stack.getPointer();
                     try {
                         return create(hwnd, hwndDummy, attribs, effective);
                     } finally {
+                        stack.setPointer(ptr);
                         User32.DestroyWindow(hwndDummy);
                     }
                 } finally {
@@ -257,11 +260,14 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
     }
 
     private long create(long windowHandle, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
+        MemoryStack stack = MemoryStack.stackGet();
+        long bufferAddr = stack.nmalloc(4, (4*2) << 2);
+
         // Validate context attributes
         validateAttributes(attribs);
 
         // Find this exact pixel format, though for now without multisampling. This comes later!
-        PIXELFORMATDESCRIPTOR pfd = PIXELFORMATDESCRIPTOR.create();
+        PIXELFORMATDESCRIPTOR pfd = PIXELFORMATDESCRIPTOR.callocStack();
         pfd.nSize((short) PIXELFORMATDESCRIPTOR.SIZEOF);
         pfd.nVersion((short) 1); // this should always be 1
         pfd.dwLayerMask(GDI32.PFD_MAIN_PLANE);
@@ -301,8 +307,6 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
             User32.ReleaseDC(dummyWindowHandle, hDCdummy);
             throw new AWTException("Failed to create OpenGL context");
         }
-
-        final APIBuffer buffer = new APIBuffer();
 
         // Save current context to restore it later
         final long currentContext = WGL.wglGetCurrentContext();
@@ -410,7 +414,7 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 // Make context current to join swap group and/or barrier
                 success = WGL.wglMakeCurrent(hDC, context);
                 try {
-                    wglNvSwapGroupAndBarrier(attribs, buffer, buffer.address(), hDC);
+                    wglNvSwapGroupAndBarrier(attribs, stack.getAddress() + stack.getPointer(), hDC);
                 } catch (AWTException e) {
                     User32.ReleaseDC(windowHandle, hDC);
                     WGL.wglMakeCurrent(currentDc, currentContext);
@@ -537,15 +541,15 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
             }
             // Query matching pixel formats
             encodePixelFormatAttribs(attribList, attribs);
-            success = JNI.callPPPPPI(wglChoosePixelFormatAddr, hDC, attribListAddr, 0L, 1, buffer.address() + 4, buffer.address()) == 1;
-            int numFormats = buffer.buffer().getInt(0);
+            success = JNI.callPPPPPI(wglChoosePixelFormatAddr, hDC, attribListAddr, 0L, 1, bufferAddr + 4, bufferAddr) == 1;
+            int numFormats = MemoryUtil.memGetInt(bufferAddr);
             if (!success || numFormats == 0) {
                 User32.ReleaseDC(windowHandle, hDC);
                 WGL.wglDeleteContext(dummyContext);
                 WGL.wglMakeCurrent(currentDc, currentContext);
                 throw new AWTException("No supported pixel format found.");
             }
-            pixelFormat = buffer.buffer().getInt(4);
+            pixelFormat = MemoryUtil.memGetInt(bufferAddr + 4);
             // Describe pixel format for the PIXELFORMATDESCRIPTOR to match the chosen format
             int pixFmtIndex = GDI32.DescribePixelFormat(hDC, pixelFormat, pfd);
             if (pixFmtIndex == 0) {
@@ -743,7 +747,7 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 throw new AWTException("Swap group or barrier requested but WGL_NV_swap_group is unavailable");
             }
             try {
-                wglNvSwapGroupAndBarrier(attribs, buffer, buffer.address(), hDC);
+                wglNvSwapGroupAndBarrier(attribs, bufferAddr, hDC);
             } catch (AWTException e) {
                 User32.ReleaseDC(windowHandle, hDC);
                 WGL.wglMakeCurrent(currentDc, currentContext);
@@ -756,12 +760,12 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         long getString = GL.getFunctionProvider().getFunctionAddress("glGetString");
         effective.api = attribs.api;
         if (atLeast30(attribs.majorVersion, attribs.minorVersion)) {
-            JNI.callPV(getInteger, GL30.GL_MAJOR_VERSION, buffer.address());
-            effective.majorVersion = buffer.intValue(0);
-            JNI.callPV(getInteger, GL30.GL_MINOR_VERSION, buffer.address());
-            effective.minorVersion = buffer.intValue(0);
-            JNI.callPV(getInteger, GL30.GL_CONTEXT_FLAGS, buffer.address());
-            int effectiveContextFlags = buffer.intValue(0);
+            JNI.callPV(getInteger, GL30.GL_MAJOR_VERSION, bufferAddr);
+            effective.majorVersion = MemoryUtil.memGetInt(bufferAddr);
+            JNI.callPV(getInteger, GL30.GL_MINOR_VERSION, bufferAddr);
+            effective.minorVersion = MemoryUtil.memGetInt(bufferAddr);
+            JNI.callPV(getInteger, GL30.GL_CONTEXT_FLAGS, bufferAddr);
+            int effectiveContextFlags = MemoryUtil.memGetInt(bufferAddr);
             effective.debug = (effectiveContextFlags & GL43.GL_CONTEXT_FLAG_DEBUG_BIT) != 0;
             effective.forwardCompatible = (effectiveContextFlags & GL30.GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0;
             effective.robustness = (effectiveContextFlags & ARBRobustness.GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB) != 0;
@@ -775,8 +779,8 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
             effective.minorVersion = version.minor;
         }
         if (attribs.api == API.GL && atLeast32(effective.majorVersion, effective.minorVersion)) {
-            JNI.callPV(getInteger, GL32.GL_CONTEXT_PROFILE_MASK, buffer.address());
-            int effectiveProfileMask = buffer.intValue(0);
+            JNI.callPV(getInteger, GL32.GL_CONTEXT_PROFILE_MASK, bufferAddr);
+            int effectiveProfileMask = MemoryUtil.memGetInt(bufferAddr);
             boolean core = (effectiveProfileMask & GL32.GL_CONTEXT_CORE_PROFILE_BIT) != 0;
             boolean comp = (effectiveProfileMask & GL32.GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0;
             if (comp) {
@@ -788,14 +792,14 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
             }
         }
         if (attribs.samples >= 1) {
-            JNI.callPV(getInteger, ARBMultisample.GL_SAMPLES_ARB, buffer.address());
-            effective.samples = buffer.intValue(0);
-            JNI.callPV(getInteger, ARBMultisample.GL_SAMPLE_BUFFERS_ARB, buffer.address());
-            effective.sampleBuffers = buffer.intValue(0);
+            JNI.callPV(getInteger, ARBMultisample.GL_SAMPLES_ARB, bufferAddr);
+            effective.samples = MemoryUtil.memGetInt(bufferAddr);
+            JNI.callPV(getInteger, ARBMultisample.GL_SAMPLE_BUFFERS_ARB, bufferAddr);
+            effective.sampleBuffers = MemoryUtil.memGetInt(bufferAddr);
             boolean has_WGL_NV_multisample_coverage = wglExtensionsList.contains("WGL_NV_multisample_coverage");
             if (has_WGL_NV_multisample_coverage) {
-                JNI.callPV(getInteger, NVMultisampleCoverage.GL_COLOR_SAMPLES_NV, buffer.address());
-                effective.colorSamplesNV = buffer.intValue(0);
+                JNI.callPV(getInteger, NVMultisampleCoverage.GL_COLOR_SAMPLES_NV, bufferAddr);
+                effective.colorSamplesNV = MemoryUtil.memGetInt(bufferAddr);
             }
         }
         // Restore old context
@@ -803,15 +807,15 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         return newCtx;
     }
 
-    private void wglNvSwapGroupAndBarrier(GLData attribs, APIBuffer buffer, long bufferAddr, long hDC) throws AWTException {
+    private void wglNvSwapGroupAndBarrier(GLData attribs, long bufferAddr, long hDC) throws AWTException {
         int success;
         long wglQueryMaxSwapGroupsNVAddr = WGL.wglGetProcAddress("wglQueryMaxSwapGroupsNV");
         success = JNI.callPPPI(wglQueryMaxSwapGroupsNVAddr, hDC, bufferAddr, bufferAddr + 4);
-        int maxGroups = buffer.buffer().getInt(0);
+        int maxGroups = MemoryUtil.memGetInt(bufferAddr);
         if (maxGroups < attribs.swapGroupNV) {
             throw new AWTException("Swap group exceeds maximum group index");
         }
-        int maxBarriers = buffer.buffer().getInt(4);
+        int maxBarriers = MemoryUtil.memGetInt(bufferAddr + 4);
         if (maxBarriers < attribs.swapBarrierNV) {
             throw new AWTException("Swap barrier exceeds maximum barrier index");
         }
