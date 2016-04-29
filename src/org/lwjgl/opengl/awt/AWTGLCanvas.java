@@ -28,9 +28,13 @@ public abstract class AWTGLCanvas extends Canvas {
             }
         }
         platformGLCanvas.makeCurrent(this, context);
-        if (created)
-            initGL();
-        paintGL();
+        try {
+            if (created)
+                initGL();
+            paintGL();
+        } finally {
+            platformGLCanvas.makeCurrent(null, 0L);
+        }
     }
 
     /**

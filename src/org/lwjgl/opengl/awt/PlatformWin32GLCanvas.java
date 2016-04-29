@@ -840,6 +840,8 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
     @Override
     public boolean makeCurrent(Canvas canvas, long context) {
+        if (canvas == null && context == 0L)
+            return WGL.wglMakeCurrent(0L, 0L);
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
         try {
             int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
