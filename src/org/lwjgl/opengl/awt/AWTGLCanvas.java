@@ -52,8 +52,7 @@ public abstract class AWTGLCanvas extends Canvas {
                 context = platformCanvas.create(this, data, effective);
                 created = true;
             } catch (AWTException e) {
-                e.printStackTrace();
-                throw new RuntimeException();
+                throw new RuntimeException("Exception while creating the OpenGL context", e);
             }
         }
         platformCanvas.makeCurrent(context);
