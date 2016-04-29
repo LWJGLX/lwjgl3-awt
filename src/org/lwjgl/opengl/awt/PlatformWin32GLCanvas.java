@@ -51,7 +51,7 @@ import org.lwjgl.system.windows.WNDCLASSEX;
 import org.lwjgl.system.windows.WindowProc;
 
 /**
- * Windows-specific implementation of methods for GLCanvas.
+ * Windows-specific implementation of {@link PlatformGLCanvas}.
  * 
  * @author Kai Burjack
  */
@@ -216,9 +216,7 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         String className = "AWTAPPWNDCLASS";
         WNDCLASSEX in = WNDCLASSEX.calloc();
         in.cbSize(WNDCLASSEX.SIZEOF);
-        in.style(0);
         in.lpfnWndProc(defaultWndProc);
-        in.cbWndExtra(0);
         in.hInstance(HINSTANCE);
         ByteBuffer classNameBuffer = MemoryUtil.memUTF16(className);
         in.lpszClassName(classNameBuffer);

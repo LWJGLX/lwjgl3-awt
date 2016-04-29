@@ -3,6 +3,11 @@ package org.lwjgl.opengl.awt;
 import java.awt.AWTException;
 import java.awt.Canvas;
 
+/**
+ * Interface for platform-specific implementations of {@link AWTGLCanvas}.
+ *
+ * @author Kai Burjack
+ */
 public interface PlatformGLCanvas {
     long create(Canvas canvas, GLData data, GLData effective) throws AWTException;
     boolean deleteContext(long context);

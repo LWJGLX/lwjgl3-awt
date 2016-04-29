@@ -6,6 +6,11 @@ import java.awt.Graphics;
 
 import org.lwjgl.system.Platform;
 
+/**
+ * An AWT {@link Canvas} that supports to be drawn on using OpenGL.
+ * 
+ * @author Kai Burjack
+ */
 public abstract class AWTGLCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
 

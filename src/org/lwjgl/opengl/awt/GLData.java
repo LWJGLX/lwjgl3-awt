@@ -1,7 +1,7 @@
 package org.lwjgl.opengl.awt;
 
 /**
- * Drop-in replacement for SWT's {@link org.eclipse.swt.opengl.GLData} class.
+ * Contains all information to create an OpenGL context on an {@link AWTGLCanvas}.
  * 
  * @author Kai Burjack
  */
@@ -149,8 +149,8 @@ public class GLData {
      */
     public boolean loseContextOnReset;
     /**
-     * When {@link #robustness} is <code>true</code> and {@link #loseContextOnReset} is <code>true</code> then this specifies whether a graphics reset only affects
-     * the current application and no other application in the system.
+     * When {@link #robustness} is <code>true</code> and {@link #loseContextOnReset} is <code>true</code> then this specifies whether a graphics reset only affects the current application and no other
+     * application in the system.
      */
     public boolean contextResetIsolation;
 

@@ -35,8 +35,7 @@ public class Core32Test {
                 glVertexAttribPointer(0, 2, GL_FLOAT, false, 0, 0L);
                 glEnableVertexAttribArray(0);
                 int vs = glCreateShader(GL_VERTEX_SHADER);
-                glShaderSource(vs,
-                        "#version 150 core\nuniform float aspect;in vec2 vertex;void main(void){gl_Position=vec4(vertex/vec2(aspect, 1.0), 0.0, 1.0);}");
+                glShaderSource(vs, "#version 150 core\nuniform float aspect;in vec2 vertex;void main(void){gl_Position=vec4(vertex/vec2(aspect, 1.0), 0.0, 1.0);}");
                 glCompileShader(vs);
                 if (glGetShaderi(vs, GL_COMPILE_STATUS) == 0)
                     throw new AssertionError("Could not compile vertex shader: " + glGetShaderInfoLog(vs));
