@@ -13,7 +13,7 @@ import org.lwjgl.vulkan.VkPhysicalDevice;
  * @author Kai Burjack
  */
 public abstract class AWTVKCanvas extends Canvas {
-    private static final long serialVersionUID = -7070232983445948438L;
+    private static final long serialVersionUID = 1L;
     private static PlatformVKCanvas platformCanvas;
     static {
         String platformClassName;

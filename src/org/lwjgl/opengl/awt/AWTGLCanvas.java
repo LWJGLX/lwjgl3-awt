@@ -13,7 +13,6 @@ import org.lwjgl.system.Platform;
  */
 public abstract class AWTGLCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
-
     private PlatformGLCanvas platformCanvas;
     {
         String platformClassName;
