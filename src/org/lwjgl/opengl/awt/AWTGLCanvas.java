@@ -4,10 +4,34 @@ import java.awt.AWTException;
 import java.awt.Canvas;
 import java.awt.Graphics;
 
+import org.lwjgl.system.Platform;
+
 public abstract class AWTGLCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
 
-    private PlatformGLCanvas platformGLCanvas = new PlatformWin32GLCanvas();
+    private static PlatformGLCanvas platformCanvas;
+    static {
+        String platformClassName;
+        switch (Platform.get()) {
+        case WINDOWS:
+            platformClassName = "org.lwjgl.opengl.awt.PlatformWin32GLCanvas";
+            break;
+        default:
+            throw new AssertionError("NYI");
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Class<? extends PlatformGLCanvas> clazz = (Class<? extends PlatformGLCanvas>) AWTGLCanvas.class.getClassLoader().loadClass(platformClassName);
+            platformCanvas = clazz.newInstance();
+        } catch (ClassNotFoundException e) {
+            throw new AssertionError("Platform-specific GLCanvas class not found: " + platformClassName);
+        } catch (InstantiationException e) {
+            throw new AssertionError("Could not instantiate platform-specific GLCanvas class: " + platformClassName);
+        } catch (IllegalAccessException e) {
+            throw new AssertionError("Could not instantiate platform-specific GLCanvas class: " + platformClassName);
+        }
+    }
+
     protected long context;
     private final GLData data;
     private final GLData effective = new GLData();
@@ -25,20 +49,20 @@ public abstract class AWTGLCanvas extends Canvas {
         boolean created = false;
         if (context == 0L) {
             try {
-                context = platformGLCanvas.create(this, data, effective);
+                context = platformCanvas.create(this, data, effective);
                 created = true;
             } catch (AWTException e) {
                 e.printStackTrace();
                 throw new RuntimeException();
             }
         }
-        platformGLCanvas.makeCurrent(this, context);
+        platformCanvas.makeCurrent(this, context);
         try {
             if (created)
                 initGL();
             paintGL();
         } finally {
-            platformGLCanvas.makeCurrent(null, 0L);
+            platformCanvas.makeCurrent(null, 0L);
         }
     }
 
@@ -53,7 +77,7 @@ public abstract class AWTGLCanvas extends Canvas {
     public abstract void paintGL();
 
     public final void swapBuffers() {
-        platformGLCanvas.swapBuffers(this);
+        platformCanvas.swapBuffers(this);
     }
 
 }
