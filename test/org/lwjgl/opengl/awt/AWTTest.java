@@ -18,7 +18,9 @@ public class AWTTest {
         data.samples = 4;
         data.swapInterval = 0;
         frame.add(new AWTGLCanvas(data) {
+            private static final long serialVersionUID = 1L;
             public void initGL() {
+                System.out.println("OpenGL version: " + effective.majorVersion + "." + effective.minorVersion + " (Profile: " + effective.profile + ")");
                 createCapabilities();
                 glClearColor(0.3f, 0.4f, 0.5f, 1);
             }

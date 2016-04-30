@@ -80,7 +80,9 @@ public class SimpleDemo {
         frame.setLayout(new BorderLayout());
         frame.setPreferredSize(new Dimension(600, 600));
         frame.add(new AWTVKCanvas(data) {
+            private static final long serialVersionUID = 1L;
             public void initVK() {
+                @SuppressWarnings("unused")
                 long surface = this.surface;
                 // Do something with surface...
             }

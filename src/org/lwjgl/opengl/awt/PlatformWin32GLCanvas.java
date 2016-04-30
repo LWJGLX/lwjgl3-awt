@@ -241,11 +241,9 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
                     JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
                     this.hwnd = dsiWin.hwnd();
                     long hwndDummy = createDummyWindow();
-                    MemoryStack stack = MemoryStack.stackGet(); int ptr = stack.getPointer();
                     try {
                         return create(hwnd, hwndDummy, attribs, effective);
                     } finally {
-                        stack.setPointer(ptr);
                         User32.DestroyWindow(hwndDummy);
                     }
                 } finally {

@@ -24,8 +24,10 @@ public class Core32Test {
         data.minorVersion = 2;
         data.profile = GLData.Profile.CORE;
         frame.add(new AWTGLCanvas(data) {
+            private static final long serialVersionUID = 1L;
             int aspectUniform;
             public void initGL() {
+                System.out.println("OpenGL version: " + effective.majorVersion + "." + effective.minorVersion + " (Profile: " + effective.profile + ")");
                 createCapabilities();
                 glClearColor(0.3f, 0.4f, 0.5f, 1);
                 glBindVertexArray(glGenVertexArrays());
@@ -61,7 +63,7 @@ public class Core32Test {
                 glViewport(0, 0, w, h);
                 glUniform1f(aspectUniform, aspect);
                 glDrawArrays(GL_TRIANGLES, 0, 6);
-                swapBuffers();
+                this.swapBuffers();
                 this.repaint();
             }
         }, BorderLayout.CENTER);

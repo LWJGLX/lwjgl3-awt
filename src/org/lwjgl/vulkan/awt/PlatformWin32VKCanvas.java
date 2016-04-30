@@ -1,6 +1,5 @@
 package org.lwjgl.vulkan.awt;
 
-import static org.lwjgl.system.MemoryStack.*;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.vulkan.KHRWin32Surface.*;
 import static org.lwjgl.vulkan.VK10.*;
@@ -8,8 +7,9 @@ import static org.lwjgl.vulkan.VK10.*;
 import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.ByteBuffer;
-import java.nio.LongBuffer;
 
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
@@ -33,6 +33,8 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
     }
 
     public long create(Canvas canvas, VKData data) throws AWTException {
+        MemoryStack stack = MemoryStack.stackGet();
+        int ptr = stack.getPointer();
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
         try {
             int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
@@ -43,11 +45,14 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
                 try {
                     JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
                     long hwnd = dsiWin.hwnd();
-                    VkWin32SurfaceCreateInfoKHR sci = VkWin32SurfaceCreateInfoKHR.callocStack().sType(VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR)
-                            .hinstance(WinBase.GetModuleHandle((ByteBuffer) null)).hwnd(hwnd);
-                    LongBuffer pSurface = stackMallocLong(1);
-                    int err = vkCreateWin32SurfaceKHR(data.instance, sci, null, pSurface);
-                    long surface = pSurface.get(0);
+                    VkWin32SurfaceCreateInfoKHR sci = VkWin32SurfaceCreateInfoKHR.callocStack(stack)
+                            .sType(VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR)
+                            .hinstance(WinBase.GetModuleHandle((ByteBuffer) null))
+                            .hwnd(hwnd);
+                    long surfaceAddr = stack.nmalloc(8, 8);
+                    int err = nvkCreateWin32SurfaceKHR(data.instance, sci.address(), 0L, surfaceAddr);
+                    long surface = MemoryUtil.memGetLong(surfaceAddr);
+                    stack.setPointer(ptr);
                     if (err != VK_SUCCESS) {
                         throw new AWTException("Calling vkCreateWin32SurfaceKHR failed with error: " + err);
                     }

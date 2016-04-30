@@ -38,7 +38,7 @@ public abstract class AWTGLCanvas extends Canvas {
 
     protected long context;
     private final GLData data;
-    private final GLData effective = new GLData();
+    protected final GLData effective = new GLData();
 
     protected AWTGLCanvas(GLData data) {
         this.data = data;
