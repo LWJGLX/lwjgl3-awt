@@ -6,6 +6,7 @@ import static org.lwjgl.vulkan.KHRWin32Surface.*;
 import static org.lwjgl.vulkan.KHRXlibSurface.*;
 import static org.lwjgl.vulkan.VK10.*;
 import static org.lwjgl.vulkan.VKUtil.*;
+import static org.lwjgl.vulkan.awt.VKUtil.*;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
