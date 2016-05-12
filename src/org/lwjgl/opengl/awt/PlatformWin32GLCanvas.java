@@ -839,13 +839,11 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         }
     }
 
-    @Override
     public boolean isCurrent(long context) {
         long ret = WGL.wglGetCurrentContext();
         return ret == context;
     }
 
-    @Override
     public boolean makeCurrent(long context) {
         if (context == 0L)
             return WGL.wglMakeCurrent(0L, 0L);
@@ -855,7 +853,6 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         return ret;
     }
 
-    @Override
     public boolean deleteContext(long context) {
         boolean ret = WGL.wglDeleteContext(context);
         return ret;
@@ -881,5 +878,11 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         User32.ReleaseDC(hwnd, hDC);
         return ret == 1;
     }
+
+	public void lock() throws AWTException {
+	}
+
+	public void unlock() throws AWTException {
+	}
 
 }

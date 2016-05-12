@@ -20,6 +20,9 @@ public abstract class AWTGLCanvas extends Canvas {
         case WINDOWS:
             platformClassName = "org.lwjgl.opengl.awt.PlatformWin32GLCanvas";
             break;
+        case LINUX:
+            platformClassName = "org.lwjgl.opengl.awt.PlatformLinuxGLCanvas";
+            break;
         default:
             throw new AssertionError("NYI");
         }
@@ -59,6 +62,11 @@ public abstract class AWTGLCanvas extends Canvas {
                 throw new RuntimeException("Exception while creating the OpenGL context", e);
             }
         }
+        try {
+            platformCanvas.lock(); // <- MUST lock on Linux
+        } catch (AWTException e) {
+            throw new RuntimeException("Failed to lock Canvas", e);
+        }
         platformCanvas.makeCurrent(context);
         try {
             if (created)
@@ -66,6 +74,11 @@ public abstract class AWTGLCanvas extends Canvas {
             paintGL();
         } finally {
             platformCanvas.makeCurrent(0L);
+            try {
+                platformCanvas.unlock(); // <- MUST unlock on Linux
+            } catch (AWTException e) {
+                throw new RuntimeException("Failed to unlock Canvas", e);
+            }
         }
     }
 

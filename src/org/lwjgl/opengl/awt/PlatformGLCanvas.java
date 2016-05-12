@@ -15,4 +15,6 @@ public interface PlatformGLCanvas {
     boolean isCurrent(long context);
     boolean swapBuffers();
     boolean delayBeforeSwapNV(float seconds);
+    void lock() throws AWTException;
+    void unlock() throws AWTException;
 }
