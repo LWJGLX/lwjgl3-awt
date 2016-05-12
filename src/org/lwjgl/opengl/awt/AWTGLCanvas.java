@@ -51,6 +51,12 @@ public abstract class AWTGLCanvas extends Canvas {
         this(new GLData());
     }
 
+    public void paintAll(Graphics g) {
+    }
+
+    public void repaint() {
+    }
+
     @Override
     public void paint(Graphics g) {
         boolean created = false;
