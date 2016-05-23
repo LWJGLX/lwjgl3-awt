@@ -10,6 +10,7 @@ import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL30.*;
 
 import javax.swing.JFrame;
+import javax.swing.SwingUtilities;
 
 public class Core32Test {
     public static void main(String[] args) {
@@ -23,7 +24,8 @@ public class Core32Test {
         data.majorVersion = 3;
         data.minorVersion = 2;
         data.profile = GLData.Profile.CORE;
-        frame.add(new AWTGLCanvas(data) {
+        AWTGLCanvas canvas;
+        frame.add(canvas = new AWTGLCanvas(data) {
             private static final long serialVersionUID = 1L;
             int aspectUniform;
             public void initGL() {
@@ -69,5 +71,16 @@ public class Core32Test {
         }, BorderLayout.CENTER);
         frame.pack();
         frame.setVisible(true);
+        frame.transferFocus();
+
+        Runnable renderLoop = new Runnable() {
+			public void run() {
+				if (!canvas.isValid())
+					return;
+				canvas.render();
+				SwingUtilities.invokeLater(this);
+			}
+		};
+		SwingUtilities.invokeLater(renderLoop);
     }
 }

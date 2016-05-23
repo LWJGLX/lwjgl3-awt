@@ -757,6 +757,8 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
         if (context == 0L)
             return WGL.wglMakeCurrent(0L, 0L);
         long hdc = User32.GetDC(hwnd);
+        if (hdc == 0L)
+        	return false;
         boolean ret = WGL.wglMakeCurrent(hdc, context);
         User32.ReleaseDC(hwnd, hdc);
         return ret;
@@ -769,6 +771,8 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
     public boolean swapBuffers() {
         long hdc = User32.GetDC(hwnd);
+        if (hdc == 0L)
+        	return false;
         boolean ret = GDI32.SwapBuffers(hdc);
         User32.ReleaseDC(hwnd, hdc);
         return ret;

@@ -52,14 +52,11 @@ public abstract class AWTGLCanvas extends Canvas {
     }
 
     public void paintAll(Graphics g) {
+    	paint(g);
     }
 
-    public void repaint() {
-    }
-
-    @Override
-    public void paint(Graphics g) {
-        boolean created = false;
+    public void render() {
+    	boolean created = false;
         if (context == 0L) {
             try {
                 context = platformCanvas.create(this, data, effective);

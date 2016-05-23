@@ -7,6 +7,7 @@ import static org.lwjgl.opengl.GL.*;
 import static org.lwjgl.opengl.GL11.*;
 
 import javax.swing.JFrame;
+import javax.swing.SwingUtilities;
 
 public class AWTTest {
     public static void main(String[] args) {
@@ -17,7 +18,8 @@ public class AWTTest {
         GLData data = new GLData();
         data.samples = 4;
         data.swapInterval = 0;
-        frame.add(new AWTGLCanvas(data) {
+        AWTGLCanvas canvas;
+        frame.add(canvas = new AWTGLCanvas(data) {
             private static final long serialVersionUID = 1L;
             public void initGL() {
                 System.out.println("OpenGL version: " + effective.majorVersion + "." + effective.minorVersion + " (Profile: " + effective.profile + ")");
@@ -38,10 +40,20 @@ public class AWTTest {
                 glVertex2f(0, +0.75f);
                 glEnd();
                 swapBuffers();
-                this.repaint();
             }
         }, BorderLayout.CENTER);
         frame.pack();
         frame.setVisible(true);
+        frame.transferFocus();
+
+        Runnable renderLoop = new Runnable() {
+			public void run() {
+				if (!canvas.isValid())
+					return;
+				canvas.render();
+				SwingUtilities.invokeLater(this);
+			}
+		};
+		SwingUtilities.invokeLater(renderLoop);
     }
 }
