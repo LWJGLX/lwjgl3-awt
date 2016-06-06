@@ -5,7 +5,7 @@
 	<artifactId>lwjgl3-awt</artifactId>
 	<version>1.0.0-SNAPSHOT</version>
 	<properties>
-		<lwjgl.version>3.0.0-SNAPSHOT</lwjgl.version>
+		<lwjgl.version>3.0.1-SNAPSHOT</lwjgl.version>
 	</properties>
 	<profiles>
 		<profile>
