@@ -69,7 +69,7 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
     }
 
     public boolean getPhysicalDevicePresentationSupport(VkPhysicalDevice physicalDevice, int queueFamily) {
-        return vkGetPhysicalDeviceWin32PresentationSupportKHR(physicalDevice, queueFamily) == 1;
+        return vkGetPhysicalDeviceWin32PresentationSupportKHR(physicalDevice, queueFamily);
     }
 
 }

@@ -2,7 +2,6 @@ package org.lwjgl.opengl.awt;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
-import java.awt.Graphics;
 
 import org.lwjgl.system.Platform;
 
@@ -49,10 +48,6 @@ public abstract class AWTGLCanvas extends Canvas {
 
     protected AWTGLCanvas() {
         this(new GLData());
-    }
-
-    public void paintAll(Graphics g) {
-    	paint(g);
     }
 
     public void render() {

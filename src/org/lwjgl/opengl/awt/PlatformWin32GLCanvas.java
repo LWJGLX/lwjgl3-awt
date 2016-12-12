@@ -677,11 +677,11 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
             effective.forwardCompatible = (effectiveContextFlags & GL30.GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0;
             effective.robustness = (effectiveContextFlags & ARBRobustness.GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB) != 0;
         } else if (attribs.api == API.GL) {
-            APIVersion version = APIUtil.apiParseVersion(MemoryUtil.memUTF8(Checks.checkPointer(JNI.callP(getString, GL11.GL_VERSION))));
+            APIVersion version = APIUtil.apiParseVersion(MemoryUtil.memUTF8(Checks.check(JNI.callP(getString, GL11.GL_VERSION))));
             effective.majorVersion = version.major;
             effective.minorVersion = version.minor;
         } else if (attribs.api == API.GLES) {
-            APIVersion version = APIUtil.apiParseVersion(MemoryUtil.memUTF8(Checks.checkPointer(JNI.callP(getString, GL11.GL_VERSION))), "OpenGL ES");
+            APIVersion version = APIUtil.apiParseVersion(MemoryUtil.memUTF8(Checks.check(JNI.callP(getString, GL11.GL_VERSION))), "OpenGL ES");
             effective.majorVersion = version.major;
             effective.minorVersion = version.minor;
         }
