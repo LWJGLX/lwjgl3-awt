@@ -49,7 +49,7 @@ class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			// No framebuffer configurations supported!
 			throw new AWTException("No supported framebuffer configurations found");
 		}
-		long context = glXCreateNewContext(display, fbConfigs.get(0), GLX_RGBA_TYPE, NULL, 1);
+		long context = glXCreateNewContext(display, fbConfigs.get(0), GLX_RGBA_TYPE, NULL, true);
 		return context;
 	}
 
@@ -93,8 +93,8 @@ class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 	public boolean makeCurrent(long context) {
 		if (context == 0L)
-			return glXMakeCurrent(display, 0L, 0L) == 1;
-		return glXMakeCurrent(display, drawable, context) == 1;
+			return glXMakeCurrent(display, 0L, 0L);
+		return glXMakeCurrent(display, drawable, context);
 	}
 
 	public boolean isCurrent(long context) {
