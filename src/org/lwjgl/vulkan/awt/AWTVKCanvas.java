@@ -21,6 +21,9 @@ public abstract class AWTVKCanvas extends Canvas {
         case WINDOWS:
             platformClassName = "org.lwjgl.vulkan.awt.PlatformWin32VKCanvas";
             break;
+        case LINUX:
+            platformClassName = "org.lwjgl.vulkan.awt.PlatformX11VKCanvas";
+            break;
         default:
             throw new AssertionError("NYI");
         }
