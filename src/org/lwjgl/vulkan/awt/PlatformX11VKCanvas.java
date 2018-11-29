@@ -41,12 +41,12 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
                 try {
                     JAWTX11DrawingSurfaceInfo dsiX11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
                     long display = dsiX11.display();
-                    long visualID = dsiX11.visualID();
+                    long window = dsiX11.drawable();
 
                     VkXlibSurfaceCreateInfoKHR sci = VkXlibSurfaceCreateInfoKHR.callocStack(stack)
                             .sType(VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR)
                             .dpy(display)
-                            .window(0);
+                            .window(window);
 
                     long surfaceAddr = stack.nmalloc(8, 8);
                     int err = nvkCreateXlibSurfaceKHR(data.instance, sci.address(), 0L, surfaceAddr);
@@ -55,6 +55,7 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
                     if (err != VK_SUCCESS) {
                         throw new AWTException("Calling vkCreateXlibSurfaceKHR failed with error: " + err);
                     }
+
                     return surface;
                 } finally {
                     JAWT_DrawingSurface_FreeDrawingSurfaceInfo(ds.FreeDrawingSurfaceInfo(), dsi);
