@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/LWJGLX/lwjgl3-awt.svg?branch=master)](https://travis-ci.org/LWJGLX/lwjgl3-awt) [![Maven Central](https://img.shields.io/maven-central/v/org.lwjglx/lwjgl3-awt.svg?label=Maven%20Central)](https://search.maven.org/search?q=g:%22org.lwjglx%22%20AND%20a:%22lwjgl3-awt%22&core=gav) [![Maven Snapshot](https://img.shields.io/nexus/s/https/oss.sonatype.org/org.lwjglx/lwjgl3-awt.svg)](https://oss.sonatype.org/content/repositories/snapshots/org/lwjglx/lwjgl3-awt/)
+
 ## What is it?
 
 OpenGL and Vulkan support for AWT with LWJGL 3.
