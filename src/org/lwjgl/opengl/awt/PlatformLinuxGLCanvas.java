@@ -4,10 +4,15 @@ import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.system.MemoryUtil.*;
 import static org.lwjgl.opengl.GLX.*;
 import static org.lwjgl.opengl.GLX13.*;
+import static org.lwjgl.opengl.GLXARBCreateContext.*;
+import static org.lwjgl.opengl.GLXARBCreateContextProfile.*;
+import static org.lwjgl.opengl.GLXEXTCreateContextESProfile.*;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.IntBuffer;
+import java.util.Arrays;
+import java.util.List;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
@@ -41,7 +46,7 @@ class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		attrib_list.put(GLX_BLUE_SIZE).put(attribs.blueSize);
 		attrib_list.put(GLX_DEPTH_SIZE).put(attribs.depthSize);
 		if (attribs.doubleBuffer)
-		    attrib_list.put(GLX_DOUBLEBUFFER).put(1);
+			attrib_list.put(GLX_DOUBLEBUFFER).put(1);
 		attrib_list.put(0);
 		attrib_list.flip();
 		PointerBuffer fbConfigs = glXChooseFBConfig(display, screen, attrib_list);
@@ -49,7 +54,14 @@ class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			// No framebuffer configurations supported!
 			throw new AWTException("No supported framebuffer configurations found");
 		}
-		long context = glXCreateNewContext(display, fbConfigs.get(0), GLX_RGBA_TYPE, NULL, true);
+
+		copyGLAttribsToEffective(attribs, effective);
+		verifyGLXCapabilities(display, screen, effective);
+		IntBuffer gl_attrib_list = bufferGLAttribs(effective);
+		long context = glXCreateContextAttribsARB(display, fbConfigs.get(0), NULL, true, gl_attrib_list);
+		if (context == 0) {
+			throw new AWTException("Unable to create GLX context");
+		}
 		return context;
 	}
 
@@ -64,7 +76,7 @@ class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
-	    this.ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
+		this.ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
 		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
 		try {
 			lock();
@@ -110,4 +122,95 @@ class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		throw new UnsupportedOperationException("NYI");
 	}
 
+	private static void copyGLAttribsToEffective(GLData attribs, GLData effective) throws AWTException {
+		// Default to GL
+		if (attribs.api == null) {
+			effective.api = GLData.API.GL;
+		} else {
+			effective.api = attribs.api;
+		}
+
+		// Default to version 3.3
+		if (attribs.majorVersion == 0) {
+			effective.majorVersion = 3;
+			effective.minorVersion = 3;
+		} else {
+			effective.majorVersion = attribs.majorVersion;
+			effective.minorVersion = attribs.minorVersion;
+		}
+
+		// For versions >=3.0 determine the profile.
+		if (effective.majorVersion >= 3) {
+			if (attribs.profile == null) {
+				effective.profile = GLData.Profile.CORE;
+			} else {
+				effective.profile = attribs.profile;
+			}
+
+			// For versions >=3.2 copy forward compatible.
+			if (effective.majorVersion > 3 || effective.minorVersion >= 2) {
+				effective.forwardCompatible = attribs.forwardCompatible;
+			}
+		}
+
+		effective.debug = attribs.debug;
+	}
+
+	private static void verifyGLXCapabilities(long display, int screen, GLData data) throws AWTException {
+		List<String> extensions = Arrays.asList(glXQueryExtensionsString(display, screen).split(" "));
+		if (!extensions.contains("GLX_ARB_create_context")) {
+			throw new AWTException("GLX_ARB_create_context is unavailable");
+		}
+		if (data.api == GLData.API.GLES && !extensions.contains("GLX_EXT_create_context_es_profile")) {
+			throw new AWTException("OpenGL ES API requested but GLX_EXT_create_context_es_profile is unavailable");
+		}
+		if (data.profile != null && !extensions.contains("GLX_ARB_create_context_profile")) {
+			throw new AWTException("OpenGL profile requested but GLX_ARB_create_context_profile is unavailable");
+		}
+	}
+
+	private static IntBuffer bufferGLAttribs(GLData data) throws AWTException {
+		IntBuffer gl_attrib_list = BufferUtils.createIntBuffer(16 * 2);
+
+		// Set the render type and version
+		gl_attrib_list
+				.put(GLX_RENDER_TYPE).put(GLX_RGBA_TYPE)
+				.put(GLX_CONTEXT_MAJOR_VERSION_ARB).put(data.majorVersion)
+				.put(GLX_CONTEXT_MINOR_VERSION_ARB).put(data.minorVersion);
+
+		// Set the profile based on GLData.api and GLData.profile
+		int attrib = -1;
+		if (data.api == GLData.API.GLES) {
+			if (data.profile != null) {
+				throw new AWTException("Cannot request both OpenGL ES and profile: " + data.profile);
+			}
+			attrib = GLX_CONTEXT_ES_PROFILE_BIT_EXT;
+		} else if (data.api == GLData.API.GL) {
+			if (data.profile == GLData.Profile.CORE) {
+				attrib = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
+			} else if (data.profile == GLData.Profile.COMPATIBILITY) {
+				attrib = GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
+			} else if (data.profile != null) {
+				throw new AWTException("Unknown requested profile: " + data.profile);
+			}
+		} else {
+			throw new AWTException("Unknown requested API: " + data.api);
+		}
+		if (attrib != -1) {
+			gl_attrib_list.put(GLX_CONTEXT_PROFILE_MASK_ARB).put(attrib);
+		}
+
+		// Set debugging and forward compatibility
+		int context_flags = 0;
+		if (data.debug) {
+			context_flags |= GLX_CONTEXT_DEBUG_BIT_ARB;
+		}
+		if (data.forwardCompatible) {
+			context_flags |= GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
+		}
+		gl_attrib_list.put(GLX_CONTEXT_FLAGS_ARB).put(context_flags);
+
+		gl_attrib_list.put(0).flip();
+		return gl_attrib_list;
+	}
 }
