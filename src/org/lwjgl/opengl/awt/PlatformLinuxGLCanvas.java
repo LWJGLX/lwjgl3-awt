@@ -17,9 +17,8 @@ import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo;
 import org.lwjgl.system.linux.X11;
 
-class PlatformLinuxGLCanvas implements PlatformGLCanvas {
-
-	private static final JAWT awt;
+public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
+    public static final JAWT awt;
 	static {
 		awt = JAWT.calloc();
 		awt.version(JAWT_VERSION_1_4);
@@ -27,9 +26,9 @@ class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AssertionError("GetAWT failed");
 	}
 
-	private long display;
-	private long drawable;
-	private JAWTDrawingSurface ds;
+	public long display;
+	public long drawable;
+	public JAWTDrawingSurface ds;
 
 	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
 		int screen = X11.XDefaultScreen(display);

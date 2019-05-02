@@ -57,8 +57,8 @@ import org.lwjgl.system.windows.WindowProc;
  * 
  * @author Kai Burjack
  */
-class PlatformWin32GLCanvas implements PlatformGLCanvas {
-    private static final JAWT awt;
+public class PlatformWin32GLCanvas implements PlatformGLCanvas {
+    public static final JAWT awt;
     static {
         awt = JAWT.calloc();
         awt.version(JAWT_VERSION_1_4);
@@ -66,9 +66,9 @@ class PlatformWin32GLCanvas implements PlatformGLCanvas {
             throw new AssertionError("GetAWT failed");
     }
 
-    private long hwnd;
-    private long wglDelayBeforeSwapNVAddr = 0L;
-    private boolean wglDelayBeforeSwapNVAddr_set = false;
+    public long hwnd;
+    public long wglDelayBeforeSwapNVAddr = 0L;
+    public boolean wglDelayBeforeSwapNVAddr_set = false;
 
     /**
      * Encode the pixel format attributes stored in the given {@link GLData} into the given {@link IntBuffer} for wglChoosePixelFormatARB to consume.

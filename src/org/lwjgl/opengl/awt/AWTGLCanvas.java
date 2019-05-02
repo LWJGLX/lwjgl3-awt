@@ -2,6 +2,7 @@ package org.lwjgl.opengl.awt;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
+import java.util.concurrent.*;
 
 import org.lwjgl.system.Platform;
 
@@ -12,35 +13,23 @@ import org.lwjgl.system.Platform;
  */
 public abstract class AWTGLCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
-    private PlatformGLCanvas platformCanvas;
-    {
-        String platformClassName;
+    protected PlatformGLCanvas platformCanvas = createPlatformCanvas();
+
+    private static PlatformGLCanvas createPlatformCanvas() {
         switch (Platform.get()) {
         case WINDOWS:
-            platformClassName = "org.lwjgl.opengl.awt.PlatformWin32GLCanvas";
-            break;
+            return new PlatformWin32GLCanvas();
         case LINUX:
-            platformClassName = "org.lwjgl.opengl.awt.PlatformLinuxGLCanvas";
-            break;
+            return new PlatformLinuxGLCanvas();
         default:
-            throw new AssertionError("NYI");
-        }
-        try {
-            @SuppressWarnings("unchecked")
-            Class<? extends PlatformGLCanvas> clazz = (Class<? extends PlatformGLCanvas>) AWTGLCanvas.class.getClassLoader().loadClass(platformClassName);
-            platformCanvas = clazz.newInstance();
-        } catch (ClassNotFoundException e) {
-            throw new AssertionError("Platform-specific GLCanvas class not found: " + platformClassName);
-        } catch (InstantiationException e) {
-            throw new AssertionError("Could not instantiate platform-specific GLCanvas class: " + platformClassName);
-        } catch (IllegalAccessException e) {
-            throw new AssertionError("Could not instantiate platform-specific GLCanvas class: " + platformClassName);
+            throw new UnsupportedOperationException("Platform " + Platform.get() + " not yet supported");
         }
     }
 
     protected long context;
-    private final GLData data;
+    protected final GLData data;
     protected final GLData effective = new GLData();
+    protected boolean initCalled;
 
     protected AWTGLCanvas(GLData data) {
         this.data = data;
@@ -50,12 +39,10 @@ public abstract class AWTGLCanvas extends Canvas {
         this(new GLData());
     }
 
-    public void render() {
-    	boolean created = false;
+    protected void beforeRender() {
         if (context == 0L) {
             try {
                 context = platformCanvas.create(this, data, effective);
-                created = true;
             } catch (AWTException e) {
                 throw new RuntimeException("Exception while creating the OpenGL context", e);
             }
@@ -66,17 +53,45 @@ public abstract class AWTGLCanvas extends Canvas {
             throw new RuntimeException("Failed to lock Canvas", e);
         }
         platformCanvas.makeCurrent(context);
+    }
+
+    protected void afterRender() {
+        platformCanvas.makeCurrent(0L);
         try {
-            if (created)
+            platformCanvas.unlock(); // <- MUST unlock on Linux
+        } catch (AWTException e) {
+            throw new RuntimeException("Failed to unlock Canvas", e);
+        }
+    }
+
+    public <T> T executeInContext(Callable<T> callable) throws Exception {
+        beforeRender();
+        try {
+            return callable.call();
+        } finally {
+            afterRender();
+        }
+    }
+
+    public void runInContext(Runnable runnable) {
+        beforeRender();
+        try {
+            runnable.run();
+        } finally {
+            afterRender();
+        }
+    }
+
+    public void render() {
+        beforeRender();
+        try {
+            if (!initCalled) {
                 initGL();
+                initCalled = true;
+            }
             paintGL();
         } finally {
-            platformCanvas.makeCurrent(0L);
-            try {
-                platformCanvas.unlock(); // <- MUST unlock on Linux
-            } catch (AWTException e) {
-                throw new RuntimeException("Failed to unlock Canvas", e);
-            }
+            afterRender();
         }
     }
 

@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.lwjglx</groupId>
 	<artifactId>lwjgl3-awt</artifactId>
-	<version>0.1.1</version>
+	<version>0.1.2</version>
 	<name>LWJGLX/lwjgl3-awt</name>
 	<description>LWJGLX/lwjgl3-awt</description>
 	<inceptionYear>2016</inceptionYear>
@@ -39,7 +39,7 @@
 		<maven.compiler.source>1.8</maven.compiler.source>
 		<maven.compiler.target>1.8</maven.compiler.target>
 		<maven-compiler-plugin.version>3.8.0</maven-compiler-plugin.version>
-		<maven-javadoc-plugin.version>3.0.1</maven-javadoc-plugin.version>
+		<maven-javadoc-plugin.version>3.1.0</maven-javadoc-plugin.version>
 		<maven-gpg-plugin.version>1.6</maven-gpg-plugin.version>
 		<maven-deploy-plugin.version>3.0.0-M1</maven-deploy-plugin.version>
 		<maven-resources-plugin.version>3.1.0</maven-resources-plugin.version>
