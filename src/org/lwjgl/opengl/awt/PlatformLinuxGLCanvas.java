@@ -18,7 +18,7 @@ import org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo;
 import org.lwjgl.system.linux.X11;
 
 public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
-    public static final JAWT awt;
+	public static final JAWT awt;
 	static {
 		awt = JAWT.calloc();
 		awt.version(JAWT_VERSION_1_4);
@@ -40,7 +40,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		attrib_list.put(GLX_BLUE_SIZE).put(attribs.blueSize);
 		attrib_list.put(GLX_DEPTH_SIZE).put(attribs.depthSize);
 		if (attribs.doubleBuffer)
-		    attrib_list.put(GLX_DOUBLEBUFFER).put(1);
+			attrib_list.put(GLX_DOUBLEBUFFER).put(1);
 		attrib_list.put(0);
 		attrib_list.flip();
 		PointerBuffer fbConfigs = glXChooseFBConfig(display, screen, attrib_list);
@@ -63,7 +63,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
-	    this.ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
+		this.ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
 		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
 		try {
 			lock();
@@ -107,6 +107,11 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 	public boolean delayBeforeSwapNV(float seconds) {
 		throw new UnsupportedOperationException("NYI");
+	}
+
+	public void dispose() {
+		JAWT_FreeDrawingSurface(awt.FreeDrawingSurface(), this.ds);
+		this.ds = null;
 	}
 
 }

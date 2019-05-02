@@ -69,6 +69,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     public long hwnd;
     public long wglDelayBeforeSwapNVAddr = 0L;
     public boolean wglDelayBeforeSwapNVAddr_set = false;
+    public JAWTDrawingSurface ds;
 
     /**
      * Encode the pixel format attributes stored in the given {@link GLData} into the given {@link IntBuffer} for wglChoosePixelFormatARB to consume.
@@ -139,6 +140,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     }
 
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
+        this.ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
         try {
             int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
@@ -792,10 +794,20 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         return ret == 1;
     }
 
-	public void lock() throws AWTException {
-	}
+    public void lock() throws AWTException {
+        int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
+        if ((lock & JAWT_LOCK_ERROR) != 0)
+            throw new AWTException("JAWT_DrawingSurface_Lock() failed");
+    }
 
-	public void unlock() throws AWTException {
-	}
+    public void unlock() throws AWTException {
+        JAWT_DrawingSurface_Unlock(ds.Unlock(), ds);
+    }
+
+    @Override
+    public void dispose() {
+        JAWT_FreeDrawingSurface(awt.FreeDrawingSurface(), this.ds);
+        this.ds = null;
+    }
 
 }

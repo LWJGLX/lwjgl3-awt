@@ -31,6 +31,12 @@ public abstract class AWTGLCanvas extends Canvas {
     protected final GLData effective = new GLData();
     protected boolean initCalled;
 
+    @Override
+    public void removeNotify() {
+        super.removeNotify();
+        this.platformCanvas.dispose();
+    }
+
     protected AWTGLCanvas(GLData data) {
         this.data = data;
     }

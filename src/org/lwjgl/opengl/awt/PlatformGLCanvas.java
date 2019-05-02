@@ -17,4 +17,5 @@ public interface PlatformGLCanvas {
     boolean delayBeforeSwapNV(float seconds);
     void lock() throws AWTException;
     void unlock() throws AWTException;
+    void dispose();
 }

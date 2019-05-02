@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.lwjglx</groupId>
 	<artifactId>lwjgl3-awt</artifactId>
-	<version>0.1.2</version>
+	<version>0.1.3</version>
 	<name>LWJGLX/lwjgl3-awt</name>
 	<description>LWJGLX/lwjgl3-awt</description>
 	<inceptionYear>2016</inceptionYear>
