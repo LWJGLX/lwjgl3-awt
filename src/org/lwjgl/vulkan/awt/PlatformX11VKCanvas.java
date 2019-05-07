@@ -31,13 +31,13 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
     public long create(Canvas canvas, VKData data) throws AWTException {
         MemoryStack stack = MemoryStack.stackGet();
         int ptr = stack.getPointer();
-        JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
+        JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
-            int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
+            int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
             if ((lock & JAWT_LOCK_ERROR) != 0)
                 throw new AWTException("JAWT_DrawingSurface_Lock() failed");
             try {
-                JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds.GetDrawingSurfaceInfo(), ds);
+                JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
                 try {
                     JAWTX11DrawingSurfaceInfo dsiX11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
                     long display = dsiX11.display();
@@ -58,13 +58,13 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
 
                     return surface;
                 } finally {
-                    JAWT_DrawingSurface_FreeDrawingSurfaceInfo(ds.FreeDrawingSurfaceInfo(), dsi);
+                    JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
                 }
             } finally {
-                JAWT_DrawingSurface_Unlock(ds.Unlock(), ds);
+                JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
             }
         } finally {
-            JAWT_FreeDrawingSurface(awt.FreeDrawingSurface(), ds);
+            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
         }
     }
 

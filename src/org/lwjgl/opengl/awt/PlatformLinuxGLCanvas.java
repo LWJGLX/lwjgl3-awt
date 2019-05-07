@@ -53,22 +53,22 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public void lock() throws AWTException {
-		int lock = JAWT_DrawingSurface_Lock(ds.Lock(), ds);
+		int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
 		if ((lock & JAWT_LOCK_ERROR) != 0)
 			throw new AWTException("JAWT_DrawingSurface_Lock() failed");
 	}
 
 	public void unlock() throws AWTException {
-		JAWT_DrawingSurface_Unlock(ds.Unlock(), ds);
+		JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
 	}
 
 	public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
-		this.ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
-		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(awt.GetDrawingSurface(), canvas);
+		this.ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
 		try {
 			lock();
 			try {
-				JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds.GetDrawingSurfaceInfo(), ds);
+				JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
 				try {
 					JAWTX11DrawingSurfaceInfo dsiWin = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
 					int depth = dsiWin.depth();
@@ -76,13 +76,13 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 					this.drawable = dsiWin.drawable();
 					return create(depth, attribs, effective);
 				} finally {
-					JAWT_DrawingSurface_FreeDrawingSurfaceInfo(ds.FreeDrawingSurfaceInfo(), dsi);
+					JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
 				}
 			} finally {
 				unlock();
 			}
 		} finally {
-			JAWT_FreeDrawingSurface(awt.FreeDrawingSurface(), ds);
+			JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
 		}
 	}
 
@@ -110,7 +110,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public void dispose() {
-		JAWT_FreeDrawingSurface(awt.FreeDrawingSurface(), this.ds);
+		JAWT_FreeDrawingSurface(this.ds, awt.FreeDrawingSurface());
 		this.ds = null;
 	}
 
