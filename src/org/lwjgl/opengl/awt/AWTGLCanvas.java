@@ -2,8 +2,12 @@ package org.lwjgl.opengl.awt;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.util.concurrent.*;
 
+import org.lwjgl.awthacks.NonClearGraphics;
+import org.lwjgl.awthacks.NonClearGraphics2D;
 import org.lwjgl.system.Platform;
 
 /**
@@ -113,6 +117,18 @@ public abstract class AWTGLCanvas extends Canvas {
 
     public final void swapBuffers() {
         platformCanvas.swapBuffers();
+    }
+    
+    /**
+     * Returns Graphics object that ignores {@link Graphics#clearRect(int, int, int, int)}
+     * calls.
+     * This is done so that the frame buffer will not be cleared by AWT/Swing internals.
+     */
+    @Override
+    public Graphics getGraphics() {
+    	Graphics graphics = super.getGraphics();
+    	return (graphics instanceof Graphics2D) ? 
+    			new NonClearGraphics2D((Graphics2D) graphics) : new NonClearGraphics(graphics);
     }
 
 }
