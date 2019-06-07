@@ -16,6 +16,19 @@ import java.util.List;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.opengl.ARBRobustness;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GL32;
+import org.lwjgl.opengl.GL43;
+import org.lwjgl.opengl.GLXEXTCreateContextESProfile;
+import org.lwjgl.system.APIUtil.APIVersion;
+import org.lwjgl.system.APIUtil;
+import org.lwjgl.system.Checks;
+import org.lwjgl.system.JNI;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
@@ -44,8 +57,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		attrib_list.put(GLX_GREEN_SIZE).put(attribs.greenSize);
 		attrib_list.put(GLX_BLUE_SIZE).put(attribs.blueSize);
 		attrib_list.put(GLX_DEPTH_SIZE).put(attribs.depthSize);
-		if (attribs.doubleBuffer)
-			attrib_list.put(GLX_DOUBLEBUFFER).put(1);
+		attrib_list.put(GLX_DOUBLEBUFFER).put(attribs.doubleBuffer ? 1 : 0);
 		attrib_list.put(0);
 		attrib_list.flip();
 		PointerBuffer fbConfigs = glXChooseFBConfig(display, screen, attrib_list);
@@ -54,13 +66,23 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AWTException("No supported framebuffer configurations found");
 		}
 
-		copyGLAttribsToEffective(attribs, effective);
-		verifyGLXCapabilities(display, screen, effective);
-		IntBuffer gl_attrib_list = bufferGLAttribs(effective);
+		GLData request = new GLData();
+		cleanAttribsRequest(attribs, request);
+		verifyGLXCapabilities(display, screen, request);
+		IntBuffer gl_attrib_list = bufferGLAttribs(request);
 		long context = glXCreateContextAttribsARB(display, fbConfigs.get(0), NULL, true, gl_attrib_list);
 		if (context == 0) {
 			throw new AWTException("Unable to create GLX context");
 		}
+
+		populateEffectiveGLXAttribs(display, fbConfigs.get(0), effective);
+
+		if (!makeCurrent(context)) {
+			throw new AWTException("Unable to make context current");
+		}
+		populateEffectiveGLAttribs(effective);
+		makeCurrent(0 /* no context */);
+
 		return context;
 	}
 
@@ -126,38 +148,32 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		this.ds = null;
 	}
 
-	private static void copyGLAttribsToEffective(GLData attribs, GLData effective) throws AWTException {
+	private static void cleanAttribsRequest(GLData attribs, GLData request) throws AWTException {
 		// Default to GL
 		if (attribs.api == null) {
-			effective.api = GLData.API.GL;
+			request.api = GLData.API.GL;
 		} else {
-			effective.api = attribs.api;
+			request.api = attribs.api;
 		}
 
-		// Default to version 3.3
-		if (attribs.majorVersion == 0) {
-			effective.majorVersion = 3;
-			effective.minorVersion = 3;
-		} else {
-			effective.majorVersion = attribs.majorVersion;
-			effective.minorVersion = attribs.minorVersion;
+		if (attribs.majorVersion > 0) {
+			request.majorVersion = attribs.majorVersion;
+			request.minorVersion = attribs.minorVersion;
 		}
 
 		// For versions >=3.0 determine the profile.
-		if (effective.majorVersion >= 3) {
-			if (attribs.profile == null) {
-				effective.profile = GLData.Profile.CORE;
-			} else {
-				effective.profile = attribs.profile;
+		if (request.majorVersion >= 3) {
+			if (attribs.profile != null) {
+				request.profile = attribs.profile;
 			}
 
 			// For versions >=3.2 copy forward compatible.
-			if (effective.majorVersion > 3 || effective.minorVersion >= 2) {
-				effective.forwardCompatible = attribs.forwardCompatible;
+			if (request.majorVersion > 3 || request.minorVersion >= 2) {
+				request.forwardCompatible = attribs.forwardCompatible;
 			}
 		}
 
-		effective.debug = attribs.debug;
+		request.debug = attribs.debug;
 	}
 
 	private static void verifyGLXCapabilities(long display, int screen, GLData data) throws AWTException {
@@ -177,31 +193,34 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		IntBuffer gl_attrib_list = BufferUtils.createIntBuffer(16 * 2);
 
 		// Set the render type and version
-		gl_attrib_list
-				.put(GLX_RENDER_TYPE).put(GLX_RGBA_TYPE)
+		gl_attrib_list.put(GLX_RENDER_TYPE).put(GLX_RGBA_TYPE);
+
+		if (data.majorVersion > 0) {
+			gl_attrib_list
 				.put(GLX_CONTEXT_MAJOR_VERSION_ARB).put(data.majorVersion)
 				.put(GLX_CONTEXT_MINOR_VERSION_ARB).put(data.minorVersion);
+		}
 
 		// Set the profile based on GLData.api and GLData.profile
-		int attrib = -1;
+		int profile_attrib = -1;
 		if (data.api == GLData.API.GLES) {
 			if (data.profile != null) {
 				throw new AWTException("Cannot request both OpenGL ES and profile: " + data.profile);
 			}
-			attrib = GLX_CONTEXT_ES_PROFILE_BIT_EXT;
+			profile_attrib = GLX_CONTEXT_ES_PROFILE_BIT_EXT;
 		} else if (data.api == GLData.API.GL) {
 			if (data.profile == GLData.Profile.CORE) {
-				attrib = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
+				profile_attrib = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
 			} else if (data.profile == GLData.Profile.COMPATIBILITY) {
-				attrib = GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
+				profile_attrib = GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
 			} else if (data.profile != null) {
 				throw new AWTException("Unknown requested profile: " + data.profile);
 			}
 		} else {
 			throw new AWTException("Unknown requested API: " + data.api);
 		}
-		if (attrib != -1) {
-			gl_attrib_list.put(GLX_CONTEXT_PROFILE_MASK_ARB).put(attrib);
+		if (profile_attrib != -1) {
+			gl_attrib_list.put(GLX_CONTEXT_PROFILE_MASK_ARB).put(profile_attrib);
 		}
 
 		// Set debugging and forward compatibility
@@ -216,5 +235,83 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 		gl_attrib_list.put(0).flip();
 		return gl_attrib_list;
+	}
+
+	private static void populateEffectiveGLXAttribs(long display, long fbId, GLData effective)
+			throws AWTException {
+		IntBuffer buffer = BufferUtils.createIntBuffer(1);
+
+		glXGetFBConfigAttrib(display, fbId, GLX_RED_SIZE, buffer);
+		effective.redSize = buffer.get(0);
+
+		glXGetFBConfigAttrib(display, fbId, GLX_GREEN_SIZE, buffer);
+		effective.greenSize = buffer.get(0);
+
+		glXGetFBConfigAttrib(display, fbId, GLX_BLUE_SIZE, buffer);
+		effective.blueSize = buffer.get(0);
+
+		glXGetFBConfigAttrib(display, fbId, GLX_DEPTH_SIZE, buffer);
+		effective.depthSize = buffer.get(0);
+
+		glXGetFBConfigAttrib(display, fbId, GLX_DOUBLEBUFFER, buffer);
+		effective.doubleBuffer = buffer.get(0) == 1;
+	}
+
+	private static void populateEffectiveGLAttribs(GLData effective) throws AWTException {
+		long glGetIntegerv = GL.getFunctionProvider().getFunctionAddress("glGetIntegerv");
+		long glGetString = GL.getFunctionProvider().getFunctionAddress("glGetString");
+		APIVersion version = APIUtil.apiParseVersion(getString(GL11.GL_VERSION, glGetString));
+
+		effective.majorVersion = version.major;
+		effective.minorVersion = version.minor;
+
+		int profileFlags = getInteger(GL32.GL_CONTEXT_PROFILE_MASK, glGetIntegerv);
+
+		if (version.major >= 3) {
+			if (version.major >= 4 || version.minor >= 2) {
+				if ((profileFlags & GL32.GL_CONTEXT_CORE_PROFILE_BIT) != 0) {
+					effective.profile = GLData.Profile.CORE;
+				} else if ((profileFlags & GL32.GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0) {
+					effective.profile = GLData.Profile.COMPATIBILITY;
+				} else if (
+						(profileFlags & GLXEXTCreateContextESProfile.GLX_CONTEXT_ES_PROFILE_BIT_EXT) != 0) {
+					// OpenGL ES allows checking for profiles at versions below 3.2, so avoid branching into
+					// the if and actually check later.
+				} else if (profileFlags != 0) {
+					throw new AWTException("Unknown profile " + profileFlags);
+				}
+			}
+
+			int effectiveContextFlags = getInteger(GL30.GL_CONTEXT_FLAGS, glGetIntegerv);
+			effective.debug = (effectiveContextFlags & GL43.GL_CONTEXT_FLAG_DEBUG_BIT) != 0;
+			effective.forwardCompatible =
+					(effectiveContextFlags & GL30.GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0;
+			effective.robustness =
+					(effectiveContextFlags & ARBRobustness.GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB) != 0;
+		}
+
+		if ((profileFlags & GLXEXTCreateContextESProfile.GLX_CONTEXT_ES_PROFILE_BIT_EXT) != 0) {
+			effective.api = GLData.API.GLES;
+		} else {
+			effective.api = GLData.API.GL;
+		}
+
+		effective.samples = getInteger(GL13.GL_SAMPLES, glGetIntegerv);
+	}
+
+	private static int getInteger(int pname, long function) {
+		MemoryStack stack = MemoryStack.stackGet();
+		int stackPointer = stack.getPointer();
+		try {
+			IntBuffer params = stack.callocInt(1);
+			JNI.callPV(pname, memAddress(params), function);
+			return params.get(0);
+		} finally {
+			stack.setPointer(stackPointer);
+		}
+	}
+
+	private static String getString(int pname, long function) {
+		return memUTF8(Checks.check(JNI.callP(pname, function)));
 	}
 }
