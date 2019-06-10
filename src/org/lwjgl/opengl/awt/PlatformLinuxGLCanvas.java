@@ -6,6 +6,8 @@ import static org.lwjgl.opengl.GLX.*;
 import static org.lwjgl.opengl.GLX13.*;
 import static org.lwjgl.opengl.GLXARBCreateContext.*;
 import static org.lwjgl.opengl.GLXARBCreateContextProfile.*;
+import static org.lwjgl.opengl.GLXARBCreateContextRobustness.*;
+import static org.lwjgl.opengl.GLXARBRobustnessApplicationIsolation.*;
 import static org.lwjgl.opengl.GLXEXTCreateContextESProfile.*;
 
 import java.awt.AWTException;
@@ -23,7 +25,6 @@ import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL32;
 import org.lwjgl.opengl.GL43;
-import org.lwjgl.opengl.GLXEXTCreateContextESProfile;
 import org.lwjgl.system.APIUtil.APIVersion;
 import org.lwjgl.system.APIUtil;
 import org.lwjgl.system.Checks;
@@ -66,10 +67,8 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AWTException("No supported framebuffer configurations found");
 		}
 
-		GLData request = new GLData();
-		cleanAttribsRequest(attribs, request);
-		verifyGLXCapabilities(display, screen, request);
-		IntBuffer gl_attrib_list = bufferGLAttribs(request);
+		verifyGLXCapabilities(display, screen, attribs);
+		IntBuffer gl_attrib_list = bufferGLAttribs(attribs);
 		long context = glXCreateContextAttribsARB(display, fbConfigs.get(0), NULL, true, gl_attrib_list);
 		if (context == 0) {
 			throw new AWTException("Unable to create GLX context");
@@ -148,34 +147,6 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		this.ds = null;
 	}
 
-	private static void cleanAttribsRequest(GLData attribs, GLData request) throws AWTException {
-		// Default to GL
-		if (attribs.api == null) {
-			request.api = GLData.API.GL;
-		} else {
-			request.api = attribs.api;
-		}
-
-		if (attribs.majorVersion > 0) {
-			request.majorVersion = attribs.majorVersion;
-			request.minorVersion = attribs.minorVersion;
-		}
-
-		// For versions >=3.0 determine the profile.
-		if (request.majorVersion >= 3) {
-			if (attribs.profile != null) {
-				request.profile = attribs.profile;
-			}
-
-			// For versions >=3.2 copy forward compatible.
-			if (request.majorVersion > 3 || request.minorVersion >= 2) {
-				request.forwardCompatible = attribs.forwardCompatible;
-			}
-		}
-
-		request.debug = attribs.debug;
-	}
-
 	private static void verifyGLXCapabilities(long display, int screen, GLData data) throws AWTException {
 		List<String> extensions = Arrays.asList(glXQueryExtensionsString(display, screen).split(" "));
 		if (!extensions.contains("GLX_ARB_create_context")) {
@@ -186,6 +157,12 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		}
 		if (data.profile != null && !extensions.contains("GLX_ARB_create_context_profile")) {
 			throw new AWTException("OpenGL profile requested but GLX_ARB_create_context_profile is unavailable");
+		}
+		if (data.robustness && !extensions.contains("GLX_ARB_create_context_robustness")) {
+			throw new AWTException("OpenGL robustness requested but GLX_ARB_create_context_robustness is unavailable");
+		}
+		if (data.contextResetIsolation && !extensions.contains("GLX_ARB_robustness_application_isolation")) {
+			throw new AWTException("OpenGL robustness requested but GLX_ARB_robustness_application_isolation is unavailable");
 		}
 	}
 
@@ -208,7 +185,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 				throw new AWTException("Cannot request both OpenGL ES and profile: " + data.profile);
 			}
 			profile_attrib = GLX_CONTEXT_ES_PROFILE_BIT_EXT;
-		} else if (data.api == GLData.API.GL) {
+		} else if (data.api == GLData.API.GL || data.api == null) {
 			if (data.profile == GLData.Profile.CORE) {
 				profile_attrib = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
 			} else if (data.profile == GLData.Profile.COMPATIBILITY) {
@@ -230,6 +207,21 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		}
 		if (data.forwardCompatible) {
 			context_flags |= GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
+		}
+		if (data.robustness) {
+			context_flags |= GLX_CONTEXT_ROBUST_ACCESS_BIT_ARB;
+
+			int notificationStrategy;
+			if (data.loseContextOnReset) {
+				notificationStrategy = GLX_LOSE_CONTEXT_ON_RESET_ARB;
+
+				if (data.contextResetIsolation) {
+					context_flags |= GLX_CONTEXT_RESET_ISOLATION_BIT_ARB;
+				}
+			} else {
+				notificationStrategy = GLX_NO_RESET_NOTIFICATION_ARB;
+			}
+			gl_attrib_list.put(GLX_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB).put(notificationStrategy);
 		}
 		gl_attrib_list.put(GLX_CONTEXT_FLAGS_ARB).put(context_flags);
 
@@ -267,6 +259,12 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 		int profileFlags = getInteger(GL32.GL_CONTEXT_PROFILE_MASK, glGetIntegerv);
 
+		if ((profileFlags & GLX_CONTEXT_ES_PROFILE_BIT_EXT) != 0) {
+			effective.api = GLData.API.GLES;
+		} else {
+			effective.api = GLData.API.GL;
+		}
+
 		if (version.major >= 3) {
 			if (version.major >= 4 || version.minor >= 2) {
 				if ((profileFlags & GL32.GL_CONTEXT_CORE_PROFILE_BIT) != 0) {
@@ -274,7 +272,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 				} else if ((profileFlags & GL32.GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0) {
 					effective.profile = GLData.Profile.COMPATIBILITY;
 				} else if (
-						(profileFlags & GLXEXTCreateContextESProfile.GLX_CONTEXT_ES_PROFILE_BIT_EXT) != 0) {
+						(profileFlags & GLX_CONTEXT_ES_PROFILE_BIT_EXT) != 0) {
 					// OpenGL ES allows checking for profiles at versions below 3.2, so avoid branching into
 					// the if and actually check later.
 				} else if (profileFlags != 0) {
@@ -288,12 +286,13 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 					(effectiveContextFlags & GL30.GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0;
 			effective.robustness =
 					(effectiveContextFlags & ARBRobustness.GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB) != 0;
+			effective.contextResetIsolation =
+					(effectiveContextFlags & GLX_CONTEXT_RESET_ISOLATION_BIT_ARB) != 0;
 		}
 
-		if ((profileFlags & GLXEXTCreateContextESProfile.GLX_CONTEXT_ES_PROFILE_BIT_EXT) != 0) {
-			effective.api = GLData.API.GLES;
-		} else {
-			effective.api = GLData.API.GL;
+		if (effective.robustness) {
+			int effectiveNotificationStrategy = getInteger(ARBRobustness.GL_RESET_NOTIFICATION_STRATEGY_ARB, glGetIntegerv);
+			effective.loseContextOnReset = (effectiveNotificationStrategy & ARBRobustness.GL_LOSE_CONTEXT_ON_RESET_ARB) != 0;
 		}
 
 		effective.samples = getInteger(GL13.GL_SAMPLES, glGetIntegerv);
