@@ -49,12 +49,8 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AWTException("No supported framebuffer configurations found");
 		}
 		
-		long context;
-		if(attribs.shareContext != null){
-	    	context = glXCreateContext(display, glXGetVisualFromFBConfig(display, fbConfigs.get(0)), attribs.shareContext.context, true);
-		} else {
-			context = glXCreateNewContext(display, fbConfigs.get(0), GLX_RGBA_TYPE, NULL, true);
-		}
+		long share_list = attribs.shareContext == null ? NULL:attribs.shareContext.context;
+		long context = glXCreateNewContext(display, fbConfigs.get(0), GLX_RGBA_TYPE, share_list, true);
 		return context;
 	}
 
