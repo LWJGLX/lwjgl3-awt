@@ -1,14 +1,36 @@
 package org.lwjgl.opengl.awt;
 
-import static org.lwjgl.system.jawt.JAWTFunctions.*;
-import static org.lwjgl.system.MemoryUtil.*;
-import static org.lwjgl.opengl.GLX.*;
-import static org.lwjgl.opengl.GLX13.*;
+import static org.lwjgl.opengl.GLX.GLX_BLUE_SIZE;
+import static org.lwjgl.opengl.GLX.GLX_DEPTH_SIZE;
+import static org.lwjgl.opengl.GLX.GLX_DOUBLEBUFFER;
+import static org.lwjgl.opengl.GLX.GLX_GREEN_SIZE;
+import static org.lwjgl.opengl.GLX.GLX_RED_SIZE;
+import static org.lwjgl.opengl.GLX.glXCreateContext;
+import static org.lwjgl.opengl.GLX.glXGetCurrentContext;
+import static org.lwjgl.opengl.GLX.glXMakeCurrent;
+import static org.lwjgl.opengl.GLX.glXSwapBuffers;
+import static org.lwjgl.opengl.GLX13.GLX_DRAWABLE_TYPE;
+import static org.lwjgl.opengl.GLX13.GLX_RENDER_TYPE;
+import static org.lwjgl.opengl.GLX13.GLX_RGBA_BIT;
+import static org.lwjgl.opengl.GLX13.GLX_RGBA_TYPE;
+import static org.lwjgl.opengl.GLX13.GLX_WINDOW_BIT;
+import static org.lwjgl.opengl.GLX13.glXChooseFBConfig;
+import static org.lwjgl.opengl.GLX13.glXCreateNewContext;
+import static org.lwjgl.opengl.GLX13.glXGetVisualFromFBConfig;
+import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_DrawingSurface_FreeDrawingSurfaceInfo;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_DrawingSurface_GetDrawingSurfaceInfo;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_DrawingSurface_Lock;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_DrawingSurface_Unlock;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_FreeDrawingSurface;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_GetAWT;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_GetDrawingSurface;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_LOCK_ERROR;
+import static org.lwjgl.system.jawt.JAWTFunctions.JAWT_VERSION_1_4;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.IntBuffer;
-import java.util.Objects;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
@@ -17,7 +39,6 @@ import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo;
 import org.lwjgl.system.linux.X11;
-import org.lwjgl.system.linux.XVisualInfo;
 
 public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	public static final JAWT awt;
