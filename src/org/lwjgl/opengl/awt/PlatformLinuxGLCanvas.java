@@ -8,6 +8,7 @@ import static org.lwjgl.opengl.GLX13.*;
 import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.IntBuffer;
+import java.util.Objects;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
@@ -16,6 +17,7 @@ import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo;
 import org.lwjgl.system.linux.X11;
+import org.lwjgl.system.linux.XVisualInfo;
 
 public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	public static final JAWT awt;
@@ -48,7 +50,13 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			// No framebuffer configurations supported!
 			throw new AWTException("No supported framebuffer configurations found");
 		}
-		long context = glXCreateNewContext(display, fbConfigs.get(0), GLX_RGBA_TYPE, NULL, true);
+		
+		long context;
+		if(attribs.shareContext != null){
+	    	context = glXCreateContext(display, glXGetVisualFromFBConfig(display, fbConfigs.get(0)), attribs.shareContext.context, true);
+		} else {
+			context = glXCreateNewContext(display, fbConfigs.get(0), GLX_RGBA_TYPE, NULL, true);
+		}
 		return context;
 	}
 
