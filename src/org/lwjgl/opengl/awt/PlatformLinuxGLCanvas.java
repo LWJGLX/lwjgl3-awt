@@ -15,6 +15,7 @@ import java.awt.Canvas;
 import java.nio.IntBuffer;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
@@ -69,7 +70,17 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 		verifyGLXCapabilities(display, screen, attribs);
 		IntBuffer gl_attrib_list = bufferGLAttribs(attribs);
-		long context = glXCreateContextAttribsARB(display, fbConfigs.get(0), NULL, true, gl_attrib_list);
+		
+		long share_context = NULL;
+		if(Objects.nonNull(attribs.shareContext)) {
+			if(attribs.shareContext.context == NULL){
+				throw new IllegalStateException(
+						"Attributes specified shareContext but it is not yet created and thus cannot be shared");
+			}
+			share_context = attribs.shareContext.context;
+		}
+		
+		long context = glXCreateContextAttribsARB(display, fbConfigs.get(0), share_context, true, gl_attrib_list);
 		if (context == 0) {
 			throw new AWTException("Unable to create GLX context");
 		}
