@@ -12,8 +12,6 @@ import static org.lwjgl.opengl.GL30.*;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 
-import org.lwjgl.opengl.*;
-
 public class Core32Test {
     public static void main(String[] args) {
         JFrame frame = new JFrame("AWT test");
@@ -80,9 +78,6 @@ public class Core32Test {
 				if (!canvas.isValid())
 					return;
 				canvas.render();
-				canvas.runInContext(() -> {
-				    System.out.println(GL11.glGetString(GL_VERSION));
-				});
 				SwingUtilities.invokeLater(this);
 			}
 		};
