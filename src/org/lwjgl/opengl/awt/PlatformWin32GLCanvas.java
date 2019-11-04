@@ -334,7 +334,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
             /* Check if we want to share context */
             if (attribs.shareContext != null) {
-                success = WGL.wglShareLists(context, attribs.shareContext.context);
+                success = WGL.wglShareLists(attribs.shareContext.context, context);
                 if (!success) {
                     User32.ReleaseDC(windowHandle, hDC);
                     WGL.wglMakeCurrent(currentDc, currentContext);
