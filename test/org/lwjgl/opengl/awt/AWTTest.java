@@ -30,13 +30,15 @@ public class AWTTest {
                 int w = getWidth();
                 int h = getHeight();
                 float aspect = (float) w / h;
+                double now = System.currentTimeMillis() * 0.001;
+                float width = (float) Math.abs(Math.sin(now * 0.3));
                 glClear(GL_COLOR_BUFFER_BIT);
                 glViewport(0, 0, w, h);
                 glBegin(GL_QUADS);
                 glColor3f(0.4f, 0.6f, 0.8f);
-                glVertex2f(-0.75f / aspect, 0.0f);
+                glVertex2f(-0.75f * width / aspect, 0.0f);
                 glVertex2f(0, -0.75f);
-                glVertex2f(+0.75f / aspect, 0);
+                glVertex2f(+0.75f * width/ aspect, 0);
                 glVertex2f(0, +0.75f);
                 glEnd();
                 swapBuffers();
