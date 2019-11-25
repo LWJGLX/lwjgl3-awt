@@ -38,9 +38,12 @@ public abstract class AWTGLCanvas extends Canvas {
     @Override
     public void removeNotify() {
         super.removeNotify();
-        this.platformCanvas.dispose();
+        disposeCanvas();
     }
 
+    public void disposeCanvas() {
+        this.platformCanvas.dispose();
+    }
     protected AWTGLCanvas(GLData data) {
         this.data = data;
     }
