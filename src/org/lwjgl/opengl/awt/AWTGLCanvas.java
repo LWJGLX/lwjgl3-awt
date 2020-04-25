@@ -1,14 +1,11 @@
 package org.lwjgl.opengl.awt;
 
-import java.awt.AWTException;
-import java.awt.Canvas;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.util.concurrent.*;
-
 import org.lwjgl.awthacks.NonClearGraphics;
 import org.lwjgl.awthacks.NonClearGraphics2D;
 import org.lwjgl.system.Platform;
+
+import java.awt.*;
+import java.util.concurrent.Callable;
 
 /**
  * An AWT {@link Canvas} that supports to be drawn on using OpenGL.
@@ -25,6 +22,8 @@ public abstract class AWTGLCanvas extends Canvas {
             return new PlatformWin32GLCanvas();
         case LINUX:
             return new PlatformLinuxGLCanvas();
+        case MACOSX:
+            return new PlatformMacOSXGLCanvas();
         default:
             throw new UnsupportedOperationException("Platform " + Platform.get() + " not yet supported");
         }

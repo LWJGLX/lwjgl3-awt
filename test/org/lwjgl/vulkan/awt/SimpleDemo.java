@@ -1,6 +1,7 @@
 package org.lwjgl.vulkan.awt;
 
 import static org.lwjgl.system.MemoryUtil.*;
+import static org.lwjgl.vulkan.EXTMetalSurface.VK_EXT_METAL_SURFACE_EXTENSION_NAME;
 import static org.lwjgl.vulkan.KHRSurface.*;
 import static org.lwjgl.vulkan.KHRWin32Surface.*;
 import static org.lwjgl.vulkan.KHRXlibSurface.*;
@@ -42,8 +43,10 @@ public class SimpleDemo {
         ByteBuffer VK_KHR_OS_SURFACE_EXTENSION;
         if (Platform.get() == Platform.WINDOWS)
             VK_KHR_OS_SURFACE_EXTENSION = memUTF8(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
-        else
+        else if (Platform.get() == Platform.LINUX)
             VK_KHR_OS_SURFACE_EXTENSION = memUTF8(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
+        else
+            VK_KHR_OS_SURFACE_EXTENSION = memUTF8(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
         PointerBuffer ppEnabledExtensionNames = memAllocPointer(2);
         ppEnabledExtensionNames.put(VK_KHR_SURFACE_EXTENSION);
         ppEnabledExtensionNames.put(VK_KHR_OS_SURFACE_EXTENSION);
@@ -84,6 +87,7 @@ public class SimpleDemo {
             public void initVK() {
                 @SuppressWarnings("unused")
                 long surface = this.surface;
+
                 // Do something with surface...
             }
             public void paintVK() {
