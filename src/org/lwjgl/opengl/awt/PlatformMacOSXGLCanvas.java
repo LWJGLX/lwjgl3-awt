@@ -1,5 +1,6 @@
 package org.lwjgl.opengl.awt;
 
+import org.lwjgl.system.Library;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
@@ -23,7 +24,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         awt.version(JAWT_VERSION_1_7);
         if (!JAWT_GetAWT(awt))
             throw new AssertionError("GetAWT failed");
-        System.loadLibrary("lwjgl3awt");
+        Library.loadSystem("org.lwjgl.awt","lwjgl3awt");
         objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
         CATransaction = objc_getClass("CATransaction");
     }
