@@ -1,6 +1,7 @@
 package org.lwjgl.vulkan.awt;
 
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
@@ -31,7 +32,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
         awt.version(JAWT_VERSION_1_7);
         if (!JAWT_GetAWT(awt))
             throw new AssertionError("GetAWT failed");
-        System.loadLibrary("lwjgl3awt");
+        Library.loadSystem("org.lwjgl.awt","lwjgl3awt");
         objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
         CATransaction = objc_getClass("CATransaction");
     }
