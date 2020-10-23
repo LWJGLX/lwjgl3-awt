@@ -279,7 +279,7 @@
 			<artifactId>lwjgl</artifactId>
 			<version>${lwjgl.version}</version>
 			<classifier>natives-${platform}</classifier>
-			<scope>runtime</scope>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
@@ -296,7 +296,7 @@
 			<artifactId>lwjgl-opengl</artifactId>
 			<version>${lwjgl.version}</version>
 			<classifier>natives-${platform}</classifier>
-			<scope>runtime</scope>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
