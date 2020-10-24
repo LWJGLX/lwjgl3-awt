@@ -290,6 +290,7 @@
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-opengl</artifactId>
 			<version>${lwjgl.version}</version>
+			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
@@ -302,6 +303,7 @@
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-vulkan</artifactId>
 			<version>${lwjgl.version}</version>
+			<optional>true</optional>
 		</dependency>
 	</dependencies>
 </project>
