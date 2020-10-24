@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.lwjglx</groupId>
 	<artifactId>lwjgl3-awt</artifactId>
-	<version>0.1.8</version>
+	<version>0.1.8-SNAPSHOT</version>
 	<name>LWJGLX/lwjgl3-awt</name>
 	<description>LWJGLX/lwjgl3-awt</description>
 	<inceptionYear>2016</inceptionYear>
@@ -50,12 +50,12 @@
 	</properties>
 	<distributionManagement>
 		<snapshotRepository>
-			<id>oss.sonatype.org</id>
+			<id>ossrh</id>
 			<name>Sonatype Snapshot Repository</name>
 			<url>https://oss.sonatype.org/content/repositories/snapshots</url>
 		</snapshotRepository>
 		<repository>
-			<id>oss.sonatype.org</id>
+			<id>ossrh</id>
 			<name>Sonatype Staging Repository</name>
 			<url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
 		</repository>
@@ -114,12 +114,7 @@
 			</build>
 		</profile>
 		<profile>
-			<id>deployment</id>
-			<activation>
-				<property>
-					<name>deployment</name>
-				</property>
-			</activation>
+			<id>deploy</id>
 			<build>
 				<plugins>
 					<plugin>
@@ -132,6 +127,13 @@
 								<goals>
 									<goal>sign</goal>
 								</goals>
+								<configuration>
+									<!-- Prevent `gpg` from using pinentry programs -->
+									<gpgArguments>
+										<arg>--pinentry-mode</arg>
+										<arg>loopback</arg>
+									</gpgArguments>
+								</configuration>
 							</execution>
 						</executions>
 					</plugin>
@@ -157,7 +159,7 @@
 							</execution>
 						</executions>
 						<configuration>
-							<serverId>oss.sonatype.org</serverId>
+							<serverId>ossrh</serverId>
 							<nexusUrl>https://oss.sonatype.org/</nexusUrl>
 							<autoReleaseAfterClose>true</autoReleaseAfterClose>
 						</configuration>
