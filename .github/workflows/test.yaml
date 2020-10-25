@@ -1,0 +1,77 @@
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test-linux:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Install Dependencies
+      run: sudo apt-get install -y git openjdk-8-jdk xvfb mesa*
+    - uses: actions/checkout@v2
+    - name: Build with Maven
+      run: |
+        export XVFB_WHD="1920x1080x24"
+        export DISPLAY=":99"
+        export GALLIUM_DRIVER="llvmpipe"
+        export LIBGL_ALWAYS_SOFTWARE="1"
+        # Start Xvfb
+        echo "Starting Xvfb"
+        Xvfb :99 -ac -screen 0 "$XVFB_WHD" -nolisten tcp +extension GLX +render -noreset &
+        Xvfb_pid="$!"
+        echo "Waiting for Xvfb (PID: $Xvfb_pid) to be ready..."
+        while ! xdpyinfo -display "${DISPLAY}" > /dev/null 2>&1; do
+         		sleep 0.1
+        done
+        echo "Xvfb is running."
+
+        ./mvnw -B test
+    - name: Upload Images
+      uses: actions/upload-artifact@v2
+      if: ${{ always() }}
+      with:
+        name: images
+        path: '**/*.png'
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+      - name: Download Mesa
+        uses: carlosperate/download-file-action@v1.0.3
+        with:
+          file-url: 'https://downloads.fdossena.com/geth.php?r=mesa64-latest'
+          file-name: 'mesa64-latest.7z'
+          location: '.'
+      - name: Overwrite opengl32.dll with Mesa
+        uses: DuckSoft/extract-7z-action@v1.0
+        with:
+          pathSource: mesa64-latest.7z
+          pathTarget: C:\WINDOWS\SYSTEM32\
+      - name: Build with Maven
+        run: ./mvnw -B test
+      - name: Upload Images
+        uses: actions/upload-artifact@v2
+        if: ${{ always() }}
+        with:
+          name: images
+          path: '**/*.png'
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+      - name: Build with Maven
+        run: ./mvnw -B test
+      - name: Upload Images
+        uses: actions/upload-artifact@v2
+        if: ${{ always() }}
+        with:
+          name: images
+          path: '**/*.png'
