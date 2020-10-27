@@ -39,7 +39,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         invokePPP(CATransaction, sel_getUid("flush"), objc_msgSend);
     }
 
-    private native long createView(long platformInfo, int width, int height);
+    private native long createView(long platformInfo, int x, int y, int width, int height);
 
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
@@ -54,7 +54,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 try {
                     width = dsi.bounds().width();
                     height = dsi.bounds().height();
-                    view = createView(dsi.platformInfo(), width, height);
+                    view = createView(dsi.platformInfo(), dsi.bounds().x(), dsi.bounds().y(), width, height);
                     caFlush();
                     long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
                     return invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
