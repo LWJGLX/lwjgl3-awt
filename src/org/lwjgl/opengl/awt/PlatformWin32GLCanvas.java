@@ -806,8 +806,10 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
     @Override
     public void dispose() {
-        JAWT_FreeDrawingSurface(this.ds, awt.FreeDrawingSurface());
-        this.ds = null;
+        if (this.ds != null) {
+            JAWT_FreeDrawingSurface(this.ds, awt.FreeDrawingSurface());
+            this.ds = null;
+        }
     }
 
 }
