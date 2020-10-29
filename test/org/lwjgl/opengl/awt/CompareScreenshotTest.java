@@ -39,7 +39,7 @@ import static org.lwjgl.opengl.GL11.glViewport;
 public class CompareScreenshotTest {
     @Test
     void canvasInContentPane(TestInfo testInfo) throws AWTException, IOException {
-        JFrame frame = new JFrame("AWT test");
+        JFrame frame = new JFrame(testInfo.getDisplayName());
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setLayout(new BorderLayout());
         GLData data = new GLData();
@@ -136,6 +136,15 @@ public class CompareScreenshotTest {
 
         window.toFront();
         BufferedImage background = rbt.createScreenCapture(frameBounds);
+        // Some Operating Systems have a window open/close animation, so we wait until the screenshot is stable
+        while (true) {
+            BufferedImage s = rbt.createScreenCapture(frameBounds);
+            if (new ImageComparison(background, s).compareImages().getDifferencePercent() == 0) {
+                break;
+            } else {
+                background = s;
+            }
+        }
 
         ImageIO.write(background, "png", new File(
                 System.getProperty("os.name") + "_" +
@@ -160,6 +169,8 @@ public class CompareScreenshotTest {
         //Mac OS has round corners in the bottom, so we need to ignore a few pixels
         imageComparison.setAllowingPercentOfDifferentPixels(0.01d);
         Assertions.assertTrue(imageComparison.compareImages().getDifferencePercent() < 0.1f);
+
+        window.dispose();
     }
 
 
