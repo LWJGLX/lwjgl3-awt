@@ -9,9 +9,10 @@ import java.awt.AWTException;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.Point;
+import java.awt.Insets;
 import java.awt.Rectangle;
 import java.awt.Robot;
+import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -20,7 +21,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.github.romankh3.image.comparison.ImageComparison;
-import com.github.romankh3.image.comparison.ImageComparisonUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -38,8 +38,7 @@ import static org.lwjgl.opengl.GL11.glViewport;
 
 public class CompareScreenshotTest {
     @Test
-    void compareRendering(TestInfo testInfo) throws AWTException, IOException {
-        AtomicInteger renderCount = new AtomicInteger(0);
+    void canvasInContentPane(TestInfo testInfo) throws AWTException, IOException {
         JFrame frame = new JFrame("AWT test");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setLayout(new BorderLayout());
@@ -49,11 +48,13 @@ public class CompareScreenshotTest {
         AWTGLCanvas canvas;
         frame.add(canvas = new AWTGLCanvas(data) {
             private static final long serialVersionUID = 1L;
+
             public void initGL() {
                 System.out.println("OpenGL version: " + effective.majorVersion + "." + effective.minorVersion + " (Profile: " + effective.profile + ")");
                 createCapabilities();
                 glClearColor(0.3f, 0.4f, 0.5f, 1);
             }
+
             public void paintGL() {
                 int w = getWidth();
                 int h = getHeight();
@@ -91,13 +92,19 @@ public class CompareScreenshotTest {
         frame.setVisible(true);
         frame.transferFocus();
 
+        compareWithScreenshot(testInfo, frame, canvas);
+    }
+
+    private void compareWithScreenshot(TestInfo testInfo, Window window, AWTGLCanvas canvas) throws AWTException, IOException {
+        AtomicInteger renderCount = new AtomicInteger(0);
+
         AtomicReference<Exception> renderException = new AtomicReference<>();
 
         Runnable renderLoop = new Runnable() {
             public void run() {
                 if (!canvas.isValid())
                     return;
-                if(renderException.get()!=null){
+                if (renderException.get() != null) {
                     return;
                 }
                 renderCount.incrementAndGet();
@@ -118,10 +125,16 @@ public class CompareScreenshotTest {
             Thread.yield();
         }
         Robot rbt = new Robot();
-        Rectangle frameBounds = frame.getContentPane().getBounds();
-        Point location = frameBounds.getLocation();
-        SwingUtilities.convertPointToScreen(location, frame.getContentPane());
-        frameBounds.setLocation(location);
+
+        // Calculate inner window area
+        Rectangle frameBounds = window.getBounds();
+        Insets insets = window.getInsets();
+        frameBounds.y += insets.top;
+        frameBounds.height -= (insets.top + insets.bottom);
+        frameBounds.x += insets.left;
+        frameBounds.width -= (insets.left + insets.right);
+
+        window.toFront();
         BufferedImage background = rbt.createScreenCapture(frameBounds);
 
         ImageIO.write(background, "png", new File(
@@ -134,7 +147,8 @@ public class CompareScreenshotTest {
             throw new RuntimeException(renderException.get());
         }
 
-        BufferedImage expectedImage = ImageIO.read(getClass().getResource("/CompareScreenshotTest_compareRendering.png"));
+        BufferedImage expectedImage = ImageIO.read(getClass().getResource("/" + testInfo.getTestClass().map(Class::getSimpleName).orElse("unknown") + "_" +
+                testInfo.getTestMethod().map(Method::getName).orElse("unknown") + ".png"));
 
         File resultDestination = new File(
                 System.getProperty("os.name") + "_" +
@@ -147,5 +161,6 @@ public class CompareScreenshotTest {
         imageComparison.setAllowingPercentOfDifferentPixels(0.01d);
         Assertions.assertTrue(imageComparison.compareImages().getDifferencePercent() < 0.1f);
     }
+
 
 }
