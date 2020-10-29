@@ -6,6 +6,8 @@ jobs:
   test-linux:
     runs-on: ubuntu-20.04
     steps:
+    - name: Update Package Information
+      run: sudo apt-get update
     - name: Install Dependencies
       run: sudo apt-get install -y git openjdk-8-jdk xvfb mesa*
     - uses: actions/checkout@v2
