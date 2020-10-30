@@ -42,7 +42,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
         invokePPP(CATransaction, sel_getUid("flush"), objc_msgSend);
     }
 
-    private native long createMTKView(long platformInfo, int width, int height);
+    private native long createMTKView(long platformInfo, int x, int y, int width, int height);
 
     public long create(Canvas canvas, VKData data) throws AWTException {
         MemoryStack stack = MemoryStack.stackGet();
@@ -55,7 +55,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
             try {
                 JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
                 try {
-                    long metalLayer = createMTKView(dsi.platformInfo(), dsi.bounds().width(), dsi.bounds().height());
+                    long metalLayer = createMTKView(dsi.platformInfo(), dsi.bounds().x(), dsi.bounds().y(), dsi.bounds().width(), dsi.bounds().height());
                     caFlush();
                     PointerBuffer pLayer = PointerBuffer.create(metalLayer, 1);
                     VkMetalSurfaceCreateInfoEXT sci = VkMetalSurfaceCreateInfoEXT.callocStack(stack)

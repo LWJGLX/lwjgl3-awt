@@ -13,7 +13,7 @@ extern "C" {
  * Signature: (JII)J
  */
 JNIEXPORT jlong JNICALL Java_org_lwjgl_vulkan_awt_PlatformMacOSXVKCanvas_createMTKView
-  (JNIEnv *, jobject, jlong, jint, jint);
+  (JNIEnv *, jobject, jlong, jint, jint, jint, jint);
 
 #ifdef __cplusplus
 }

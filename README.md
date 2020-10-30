@@ -55,3 +55,8 @@ frame.add(new AWTVKCanvas(data) {
     }
 });
 ```
+
+## How to rebuild the MacOS native library
+```
+gcc -dynamiclib lwjgl3awt/*.m -o native/macosx/liblwjgl3awt.dylib -framework CoreFoundation -framework AppKit -framework MetalKit -framework Metal 
+```

@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'LWJGLX' }}
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK 1.8
@@ -13,7 +14,7 @@ jobs:
       with:
         java-version: 1.8
     - name: Build with Maven
-      run: ./mvnw -B package
+      run: ./mvnw -B package -DskipTests
     - name: Release Maven package
       uses: samuelmeuli/action-maven-publish@v1
       with:

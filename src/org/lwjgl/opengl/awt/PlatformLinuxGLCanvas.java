@@ -154,8 +154,10 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public void dispose() {
-		JAWT_FreeDrawingSurface(this.ds, awt.FreeDrawingSurface());
-		this.ds = null;
+		if (this.ds != null) {
+			JAWT_FreeDrawingSurface(this.ds, awt.FreeDrawingSurface());
+			this.ds = null;
+		}
 	}
 
 	private static void verifyGLXCapabilities(long display, int screen, GLData data) throws AWTException {

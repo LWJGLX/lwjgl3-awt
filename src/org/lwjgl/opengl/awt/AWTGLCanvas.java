@@ -37,6 +37,9 @@ public abstract class AWTGLCanvas extends Canvas {
     @Override
     public void removeNotify() {
         super.removeNotify();
+        // prepare for a possible re-adding
+        context = 0;
+        initCalled = false;
         disposeCanvas();
     }
 
