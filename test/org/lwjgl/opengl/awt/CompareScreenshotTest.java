@@ -249,7 +249,7 @@ public class CompareScreenshotTest {
         //Create ImageComparison object for it.
         ImageComparison imageComparison = new ImageComparison(expectedImage, background, resultDestination);
         //Mac OS has round corners in the bottom, so we need to ignore a few pixels
-        imageComparison.setAllowingPercentOfDifferentPixels(0.01d);
+        imageComparison.setAllowingPercentOfDifferentPixels(0.02d);
         Assertions.assertTrue(imageComparison.compareImages().getDifferencePercent() < 0.1f);
 
         window.dispose();
@@ -284,7 +284,4 @@ public class CompareScreenshotTest {
             swapBuffers();
         }
     }
-
-    ;
-
 }
