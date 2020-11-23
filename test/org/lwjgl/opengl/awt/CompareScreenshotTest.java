@@ -5,10 +5,11 @@ import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.UnsupportedLookAndFeelException;
 
 import java.awt.AWTException;
 import java.awt.BorderLayout;
-import java.awt.Canvas;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Insets;
@@ -40,6 +41,15 @@ import static org.lwjgl.opengl.GL11.glVertex2f;
 import static org.lwjgl.opengl.GL11.glViewport;
 
 public class CompareScreenshotTest {
+
+    static {
+        try {
+            UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+        } catch (ClassNotFoundException | IllegalAccessException | UnsupportedLookAndFeelException | InstantiationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Test
     void canvasInContentPane(TestInfo testInfo) throws AWTException, IOException {
         JFrame frame = new JFrame(testInfo.getDisplayName());
