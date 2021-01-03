@@ -39,14 +39,29 @@ public class SimpleDemo {
                 .pApplicationName(memUTF8("AWT Vulkan Demo"))
                 .pEngineName(memUTF8(""))
                 .apiVersion(VK_MAKE_VERSION(1, 0, 2));
+
+        // Enhanced switch statement would work better :(
+        String surfaceExtension;
+        switch (Platform.get()) {
+            case WINDOWS: {
+                surfaceExtension = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+                break;
+            }
+            case LINUX: {
+                surfaceExtension = VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
+                break;
+            }
+            case MACOSX: {
+                surfaceExtension = VK_EXT_METAL_SURFACE_EXTENSION_NAME;
+                break;
+            }
+            default: throw new RuntimeException("Failed to find the appropriate platform surface extension.");
+        }
+
+
         ByteBuffer VK_KHR_SURFACE_EXTENSION = memUTF8(VK_KHR_SURFACE_EXTENSION_NAME);
-        ByteBuffer VK_KHR_OS_SURFACE_EXTENSION;
-        if (Platform.get() == Platform.WINDOWS)
-            VK_KHR_OS_SURFACE_EXTENSION = memUTF8(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
-        else if (Platform.get() == Platform.LINUX)
-            VK_KHR_OS_SURFACE_EXTENSION = memUTF8(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
-        else
-            VK_KHR_OS_SURFACE_EXTENSION = memUTF8(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
+        ByteBuffer VK_KHR_OS_SURFACE_EXTENSION = memUTF8(surfaceExtension);
+
         PointerBuffer ppEnabledExtensionNames = memAllocPointer(2);
         ppEnabledExtensionNames.put(VK_KHR_SURFACE_EXTENSION);
         ppEnabledExtensionNames.put(VK_KHR_OS_SURFACE_EXTENSION);
