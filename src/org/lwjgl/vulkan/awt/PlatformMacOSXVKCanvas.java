@@ -10,6 +10,8 @@ import org.lwjgl.system.macosx.ObjCRuntime;
 import org.lwjgl.vulkan.VkMetalSurfaceCreateInfoEXT;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 
+import javax.swing.JRootPane;
+import javax.swing.SwingUtilities;
 import java.awt.*;
 import java.nio.LongBuffer;
 
@@ -55,6 +57,13 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
             try {
                 JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
                 try {
+                    // if the canvas is inside e.g. a JSplitPane, the dsi coordinates are wrong and need to be corrected
+                    JRootPane rootPane = SwingUtilities.getRootPane(canvas);
+                    if(rootPane!=null) {
+                        Point point = SwingUtilities.convertPoint(canvas, new Point(), rootPane);
+                        dsi.bounds().x(point.x);
+                        dsi.bounds().y(point.y);
+                    }
                     long metalLayer = createMTKView(dsi.platformInfo(), dsi.bounds().x(), dsi.bounds().y(), dsi.bounds().width(), dsi.bounds().height());
                     caFlush();
                     PointerBuffer pLayer = PointerBuffer.create(metalLayer, 1);

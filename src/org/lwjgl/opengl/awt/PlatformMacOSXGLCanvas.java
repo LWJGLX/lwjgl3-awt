@@ -7,6 +7,8 @@ import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.macosx.ObjCRuntime;
 
+import javax.swing.JRootPane;
+import javax.swing.SwingUtilities;
 import java.awt.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -102,6 +104,13 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             try {
                 JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
                 try {
+                    // if the canvas is inside e.g. a JSplitPane, the dsi coordinates are wrong and need to be corrected
+                    JRootPane rootPane = SwingUtilities.getRootPane(canvas);
+                    if(rootPane!=null) {
+                        Point point = SwingUtilities.convertPoint(canvas, new Point(), rootPane);
+                        dsi.bounds().x(point.x);
+                        dsi.bounds().y(point.y);
+                    }
                     width = dsi.bounds().width();
                     height = dsi.bounds().height();
                     long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
