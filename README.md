@@ -23,11 +23,16 @@ Because there is currently no other way to use OpenGL or Vulkan with AWT.
 
 ## How to use it with OpenGL?
 
+In order to create an OpenGL 3.3 core profile context with 4 sample MSAA, use:
+
 ```Java
 JFrame frame = new JFrame("AWT test");
 frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 frame.setLayout(new BorderLayout());
 GLData data = new GLData();
+data.majorVersion = 3;
+data.minorVersion = 3;
+data.profile = GLData.Profile.CORE;
 data.samples = 4;
 frame.add(new AWTGLCanvas(data) {
   public void initGL() {
