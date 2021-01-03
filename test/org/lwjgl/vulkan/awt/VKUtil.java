@@ -69,7 +69,7 @@ public class VKUtil {
         case VK_ERROR_VALIDATION_FAILED_EXT:
             return "A validation layer found an error.";
         default:
-            return String.format("%s [%d]", "Unknown", Integer.valueOf(result));
+            return String.format("%s [%d]", "Unknown", result);
         }
     }
 
