@@ -64,6 +64,9 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private static final int NSOpenGLPFAPixelBuffer = 90;
     private static final int NSOpenGLPFARemotePixelBuffer = 91;
 
+    private static final int NSOpenGLProfileVersion3_2Core = 0x3200;
+    private static final int NSOpenGLProfileVersionLegacy = 0x1000;
+    private static final int NSOpenGLProfileVersion4_1Core = 0x4100;
 
     public static final JAWT awt;
     private static final long objc_msgSend;
@@ -164,6 +167,26 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                         attribsArray.putInt(1);
                         attribsArray.putInt(NSOpenGLPFASamples);
                         attribsArray.putInt(attribs.samples);
+                    }
+
+                    if (attribs.profile == GLData.Profile.CORE) {
+                        attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
+                        attribsArray.putInt(NSOpenGLProfileVersion3_2Core);
+                    }
+                    if (attribs.profile == GLData.Profile.COMPATIBILITY) {
+                        attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
+                        attribsArray.putInt(NSOpenGLProfileVersionLegacy);
+                    } else {
+                        if (attribs.majorVersion >= 4) {
+                            attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
+                            attribsArray.putInt(NSOpenGLProfileVersion4_1Core);
+                        } else if (attribs.majorVersion >= 3) {
+                            attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
+                            attribsArray.putInt(NSOpenGLProfileVersion3_2Core);
+                        } else {
+                            attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
+                            attribsArray.putInt(NSOpenGLProfileVersionLegacy);
+                        }
                     }
 
                     // 0 Terminated
