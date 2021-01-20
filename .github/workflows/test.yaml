@@ -33,7 +33,7 @@ jobs:
       if: ${{ always() }}
       with:
         name: images
-        path: '**/*.png'
+        path: 'target/*.png'
   test-windows:
     runs-on: windows-latest
     steps:
@@ -60,7 +60,7 @@ jobs:
         if: ${{ always() }}
         with:
           name: images
-          path: '**/*.png'
+          path: 'target/*.png'
   test-macos:
     runs-on: macos-latest
     steps:
@@ -76,4 +76,4 @@ jobs:
         if: ${{ always() }}
         with:
           name: images
-          path: '**/*.png'
+          path: 'target/*.png'
