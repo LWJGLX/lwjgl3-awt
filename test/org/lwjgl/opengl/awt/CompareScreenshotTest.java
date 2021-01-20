@@ -218,8 +218,10 @@ public class CompareScreenshotTest {
         };
         SwingUtilities.invokeLater(renderLoop);
 
-        // Wait until we definitely have been rendered
-        while (renderException.get() == null && renderCount.get() < 10) {
+        long startTime = System.currentTimeMillis();
+
+        // Wait until we definitely have been rendered, or a timeout of 20 seconds occurred
+        while (canvases.length > 0 && renderException.get() == null && renderCount.get() < 10 && System.currentTimeMillis() - startTime < 20_000) {
             Thread.yield();
         }
         Robot rbt = new Robot();
