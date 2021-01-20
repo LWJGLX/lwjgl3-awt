@@ -191,6 +191,51 @@ public class CompareScreenshotTest {
         compareWithScreenshot(testInfo, frame, canvas);
     }
 
+    @Test
+    void hideAndShowCanvas(TestInfo testInfo) throws AWTException, IOException, InvocationTargetException, InterruptedException {
+        JFrame frame = new JFrame(testInfo.getDisplayName());
+        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        frame.setLayout(new BorderLayout());
+        GLData data = new GLData();
+        data.samples = 0;
+        data.swapInterval = 0;
+        AWTGLCanvas canvas = new DemoCanvas(data);
+        frame.add(canvas, BorderLayout.CENTER);
+        canvas.setPreferredSize(new Dimension(600, 600));
+
+        frame.add(new JPanel() {{
+            setBackground(Color.BLUE);
+        }}, BorderLayout.NORTH);
+        frame.add(new JPanel() {{
+            setBackground(Color.RED);
+        }}, BorderLayout.SOUTH);
+        frame.add(new JPanel() {{
+            setBackground(Color.GREEN);
+        }}, BorderLayout.EAST);
+        frame.add(new JPanel() {{
+            setBackground(Color.YELLOW);
+        }}, BorderLayout.WEST);
+
+        frame.pack();
+        frame.setVisible(true);
+        frame.transferFocus();
+
+        // make sure the underlying OpenGL Context is created
+        SwingUtilities.invokeAndWait(canvas::render);
+
+        frame.pack();
+
+        compareWithScreenshot(testInfo, frame, canvas);
+
+        // hide
+        canvas.setVisible(false);
+        compareWithScreenshot(testInfo, frame);
+
+        // show
+        canvas.setVisible(true);
+        compareWithScreenshot(testInfo, frame, canvas);
+    }
+
     private void compareWithScreenshot(TestInfo testInfo, Window window, AWTGLCanvas... canvases) throws AWTException, IOException {
         AtomicInteger renderCount = new AtomicInteger(0);
 

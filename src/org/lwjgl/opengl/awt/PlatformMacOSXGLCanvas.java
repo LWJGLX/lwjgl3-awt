@@ -10,6 +10,10 @@ import org.lwjgl.system.macosx.ObjCRuntime;
 import javax.swing.JRootPane;
 import javax.swing.SwingUtilities;
 import java.awt.*;
+import java.awt.event.ComponentEvent;
+import java.awt.event.ComponentListener;
+import java.awt.event.HierarchyEvent;
+import java.awt.event.HierarchyListener;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -18,6 +22,7 @@ import static org.lwjgl.opengl.GL11.glAreTexturesResident;
 import static org.lwjgl.opengl.GL11.glFlush;
 import static org.lwjgl.system.JNI.invokePPP;
 import static org.lwjgl.system.JNI.invokePPPP;
+import static org.lwjgl.system.JNI.invokePPPV;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.system.macosx.ObjCRuntime.objc_getClass;
 import static org.lwjgl.system.macosx.ObjCRuntime.sel_getUid;
@@ -99,6 +104,19 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
         this.ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+        canvas.addHierarchyListener(e -> {
+            // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
+            if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
+                long layer = invokePPP(view, sel_getUid("layer"), objc_msgSend);
+                if (e.getChanged().isShowing()) {
+                    invokePPPV(layer, sel_getUid("setHidden:"), 0, objc_msgSend);
+                } else {
+                    invokePPPV(layer, sel_getUid("setHidden:"), 1, objc_msgSend);
+                }
+                // flush the new state to the CoreAnimation pipeline, to actually get the new state displayed
+                caFlush();
+            }
+        });
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
             int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
@@ -109,7 +127,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 try {
                     // if the canvas is inside e.g. a JSplitPane, the dsi coordinates are wrong and need to be corrected
                     JRootPane rootPane = SwingUtilities.getRootPane(canvas);
-                    if(rootPane!=null) {
+                    if (rootPane != null) {
                         Point point = SwingUtilities.convertPoint(canvas, new Point(), rootPane);
                         dsi.bounds().x(point.x);
                         dsi.bounds().y(point.y);
