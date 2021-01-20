@@ -183,11 +183,16 @@ public class CompareScreenshotTest {
         // make sure the underlying OpenGL Context is created
         SwingUtilities.invokeAndWait(canvas::render);
 
-        // remove and re-add
-        frame.remove(canvas);
-        frame.add(canvas, BorderLayout.CENTER);
         frame.pack();
 
+        compareWithScreenshot(testInfo, frame, canvas);
+
+        // remove
+        frame.remove(canvas);
+        compareWithScreenshot(testInfo, frame);
+
+        // re-add
+        frame.add(canvas, BorderLayout.CENTER);
         compareWithScreenshot(testInfo, frame, canvas);
     }
 
