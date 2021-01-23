@@ -38,6 +38,7 @@ public abstract class AWTGLCanvas extends Canvas {
     public void removeNotify() {
         super.removeNotify();
         // prepare for a possible re-adding
+        platformCanvas.deleteContext(context);
         context = 0;
         initCalled = false;
         disposeCanvas();
