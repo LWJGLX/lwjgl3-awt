@@ -23,7 +23,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.github.romankh3.image.comparison.ImageComparison;
@@ -242,36 +242,44 @@ public class CompareScreenshotTest {
     }
 
     private void compareWithScreenshot(TestInfo testInfo, Window window, AWTGLCanvas... canvases) throws AWTException, IOException {
-        AtomicInteger renderCount = new AtomicInteger(0);
+        AtomicBoolean finished = new AtomicBoolean(false);
 
         AtomicReference<Exception> renderException = new AtomicReference<>();
 
         Runnable renderLoop = new Runnable() {
+            private int renderCount = 0;
+
+            long startTime = System.currentTimeMillis();
+
             public void run() {
                 for (AWTGLCanvas canvas : canvases) {
                     if (!canvas.isValid())
-                        return;
-                    if (renderException.get() != null) {
-                        return;
-                    }
-                    renderCount.incrementAndGet();
+                        continue;
+                    renderCount++;
                     try {
-                        if (renderCount.get() < 10) {
+                        if (renderCount < 10) {
                             canvas.render();
                         }
                     } catch (Exception e) {
                         renderException.set(e);
                     }
                 }
-                SwingUtilities.invokeLater(this);
+
+                // Wait until we definitely have been rendered, or a timeout of 20 seconds occurred
+                if (!(canvases.length > 0 && renderException.get() == null && renderCount < 10 && System.currentTimeMillis() - startTime < 20_000)) {
+                    finished.set(true);
+                }
+
+
+                if (!finished.get()) {
+                    SwingUtilities.invokeLater(this);
+                }
             }
         };
         SwingUtilities.invokeLater(renderLoop);
 
-        long startTime = System.currentTimeMillis();
 
-        // Wait until we definitely have been rendered, or a timeout of 20 seconds occurred
-        while (canvases.length > 0 && renderException.get() == null && renderCount.get() < 10 && System.currentTimeMillis() - startTime < 20_000) {
+        while (!finished.get()) {
             Thread.yield();
         }
         Robot rbt = new Robot();
