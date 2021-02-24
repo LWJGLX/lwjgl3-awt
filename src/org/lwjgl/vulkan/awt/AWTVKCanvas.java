@@ -12,32 +12,21 @@ import java.awt.*;
  */
 public abstract class AWTVKCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
-    private static PlatformVKCanvas platformCanvas;
+    private static final PlatformVKCanvas platformCanvas;
     static {
-        String platformClassName;
+        // Enhanced switch would work better :(
         switch (Platform.get()) {
         case WINDOWS:
-            platformClassName = "org.lwjgl.vulkan.awt.PlatformWin32VKCanvas";
+            platformCanvas = new PlatformWin32VKCanvas();
             break;
         case LINUX:
-            platformClassName = "org.lwjgl.vulkan.awt.PlatformX11VKCanvas";
+            platformCanvas = new PlatformX11VKCanvas();
             break;
         case MACOSX:
-            platformClassName = "org.lwjgl.vulkan.awt.PlatformMacOSXVKCanvas";
+            platformCanvas = new PlatformMacOSXVKCanvas();
             break;
         default:
             throw new AssertionError("NYI");
-        }
-        try {
-            @SuppressWarnings("unchecked")
-            Class<? extends PlatformVKCanvas> clazz = (Class<? extends PlatformVKCanvas>) AWTVKCanvas.class.getClassLoader().loadClass(platformClassName);
-            platformCanvas = clazz.newInstance();
-        } catch (ClassNotFoundException e) {
-            throw new AssertionError("Platform-specific VKCanvas class not found: " + platformClassName);
-        } catch (InstantiationException e) {
-            throw new AssertionError("Could not instantiate platform-specific VKCanvas class: " + platformClassName);
-        } catch (IllegalAccessException e) {
-            throw new AssertionError("Could not instantiate platform-specific VKCanvas class: " + platformClassName);
         }
     }
 
