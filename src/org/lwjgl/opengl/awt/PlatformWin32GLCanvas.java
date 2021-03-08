@@ -1,5 +1,17 @@
 package org.lwjgl.opengl.awt;
 
+import org.lwjgl.*;
+import org.lwjgl.opengl.*;
+import org.lwjgl.opengl.awt.GLData.*;
+import org.lwjgl.system.*;
+import org.lwjgl.system.jawt.JAWT;
+import org.lwjgl.system.jawt.*;
+import org.lwjgl.system.windows.*;
+
+import java.awt.*;
+import java.nio.*;
+import java.util.*;
+
 import static org.lwjgl.opengl.ARBMultisample.*;
 import static org.lwjgl.opengl.ARBRobustness.*;
 import static org.lwjgl.opengl.GL11.*;
@@ -19,37 +31,15 @@ import static org.lwjgl.opengl.WGLARBRobustnessApplicationIsolation.*;
 import static org.lwjgl.opengl.WGLEXTCreateContextES2Profile.*;
 import static org.lwjgl.opengl.WGLEXTFramebufferSRGB.*;
 import static org.lwjgl.opengl.WGLNVMultisampleCoverage.*;
+import static org.lwjgl.opengl.awt.GLUtil.*;
 import static org.lwjgl.system.APIUtil.*;
 import static org.lwjgl.system.JNI.*;
+import static org.lwjgl.system.MemoryStack.*;
 import static org.lwjgl.system.MemoryUtil.*;
-import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.system.windows.GDI32.*;
 import static org.lwjgl.system.windows.User32.*;
-import static org.lwjgl.system.windows.WindowsLibrary.HINSTANCE;
-import static org.lwjgl.opengl.awt.GLUtil.*;
-
-import java.awt.AWTException;
-import java.awt.Canvas;
-import java.nio.ByteBuffer;
-import java.nio.IntBuffer;
-import java.util.*;
-
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL;
-import org.lwjgl.opengl.awt.GLData.API;
-import org.lwjgl.opengl.awt.GLData.Profile;
-import org.lwjgl.opengl.awt.GLData.ReleaseBehavior;
-import org.lwjgl.system.APIUtil.APIVersion;
-import org.lwjgl.system.Checks;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.jawt.JAWT;
-import org.lwjgl.system.jawt.JAWTDrawingSurface;
-import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
-import org.lwjgl.system.jawt.JAWTWin32DrawingSurfaceInfo;
-import org.lwjgl.system.windows.PIXELFORMATDESCRIPTOR;
-import org.lwjgl.system.windows.WNDCLASSEX;
-import org.lwjgl.system.windows.WindowProc;
+import static org.lwjgl.system.windows.WindowsLibrary.*;
 
 /**
  * Windows-specific implementation of {@link PlatformGLCanvas}.
@@ -59,7 +49,7 @@ import org.lwjgl.system.windows.WindowProc;
 public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     public static final JAWT awt;
     static {
-        awt = JAWT.calloc();
+        awt = JAWT.create(MemoryUtil.getAllocator().calloc(1, JAWT.SIZEOF)); // untracked allocation
         awt.version(JAWT_VERSION_1_4);
         if (!JAWT_GetAWT(awt))
             throw new AssertionError("GetAWT failed");
@@ -117,26 +107,23 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         ib.put(0);
     }
 
-    private static long createDummyWindow() {
-        WindowProc defaultWndProc = new WindowProc() {
-            @Override
-            public long invoke(long hwnd, int uMsg, long wParam, long lParam) {
-                return DefWindowProc(hwnd, uMsg, wParam, lParam);
-            }
-        };
-        String className = "AWTAPPWNDCLASS";
-        WNDCLASSEX in = WNDCLASSEX.calloc();
-        in.cbSize(WNDCLASSEX.SIZEOF);
-        in.lpfnWndProc(defaultWndProc);
-        in.hInstance(HINSTANCE);
-        ByteBuffer classNameBuffer = memUTF16(className);
-        in.lpszClassName(classNameBuffer);
-        RegisterClassEx(in);
-        long hwnd = CreateWindowEx(WS_EX_APPWINDOW, className, "", 0, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL,
-                HINSTANCE, defaultWndProc.address());
-        memFree(classNameBuffer);
-        in.free();
-        return hwnd;
+    private static long createDummyWindow(MemoryStack stack) {
+        WNDCLASSEX in = WNDCLASSEX.callocStack(stack)
+            .cbSize(WNDCLASSEX.SIZEOF)
+            .hInstance(HINSTANCE)
+            .lpszClassName(stack.UTF16("AWTAPPWNDCLASS"));
+
+        memPutAddress(
+            in.address() + WNDCLASSEX.LPFNWNDPROC,
+            User32.Functions.DefWindowProc
+        );
+
+        short classAtom = RegisterClassEx(in);
+        if (classAtom == 0) {
+            throw new IllegalStateException("Failed to register WGL window class");
+        }
+
+        return nCreateWindowEx(WS_EX_APPWINDOW, classAtom & 0xFFFF, NULL, 0, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL,HINSTANCE, NULL);
     }
 
     @Override
@@ -152,11 +139,13 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 try {
                     JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
                     this.hwnd = dsiWin.hwnd();
-                    long hwndDummy = createDummyWindow();
-                    try {
-                        return create(hwnd, hwndDummy, attribs, effective);
-                    } finally {
-                        DestroyWindow(hwndDummy);
+                    try (MemoryStack stack = stackPush()) {
+                        long hwndDummy = createDummyWindow(stack);
+                        try {
+                            return create(stack, hwnd, hwndDummy, attribs, effective);
+                        } finally {
+                            DestroyWindow(hwndDummy);
+                        }
                     }
                 } finally {
                     JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
@@ -169,8 +158,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         }
     }
 
-    private long create(long windowHandle, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
-        MemoryStack stack = MemoryStack.stackGet();
+    private static long create(MemoryStack stack, long windowHandle, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
         long bufferAddr = stack.nmalloc(4, (4*2) << 2);
 
         // Validate context attributes
@@ -322,7 +310,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 // Make context current to join swap group and/or barrier
                 success = wglMakeCurrent(hDC, context);
                 try {
-                    wglNvSwapGroupAndBarrier(attribs, stack.getAddress() + stack.getPointer(), hDC);
+                    wglNvSwapGroupAndBarrier(attribs, bufferAddr, hDC);
                 } catch (AWTException e) {
                     ReleaseDC(windowHandle, hDC);
                     wglMakeCurrent(currentDc, currentContext);

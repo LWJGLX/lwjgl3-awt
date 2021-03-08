@@ -1,5 +1,7 @@
 package org.lwjgl.opengl.awt;
 
+import org.lwjgl.opengl.*;
+
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 
@@ -28,6 +30,7 @@ public class Core32Test {
         frame.add(canvas = new AWTGLCanvas(data) {
             private static final long serialVersionUID = 1L;
             int aspectUniform;
+            @Override
             public void initGL() {
                 System.out.println("OpenGL version: " + effective.majorVersion + "." + effective.minorVersion + " (Profile: " + effective.profile + ")");
                 createCapabilities();
@@ -57,6 +60,7 @@ public class Core32Test {
                 glUseProgram(prog);
                 aspectUniform = glGetUniformLocation(prog, "aspect");
             }
+            @Override
             public void paintGL() {
                 int w = getWidth();
                 int h = getHeight();
@@ -74,9 +78,12 @@ public class Core32Test {
         frame.transferFocus();
 
         Runnable renderLoop = new Runnable() {
-			public void run() {
-				if (!canvas.isValid())
-					return;
+			@Override
+            public void run() {
+				if (!canvas.isValid()) {
+                    GL.setCapabilities(null);
+                    return;
+                }
 				canvas.render();
 				SwingUtilities.invokeLater(this);
 			}

@@ -5,7 +5,7 @@ import static org.lwjgl.opengl.GL11.glClearColor;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.event.ComponentAdapter;
+import java.awt.event.*;
 
 import javax.swing.JColorChooser;
 import javax.swing.JFrame;
@@ -15,11 +15,11 @@ import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 
 public class DrawOnDemandTest {
-	
+
 	static Color quadColor = new Color(0x77aadd);
 
 	public static void main(String[] args) {
-		
+
 		AWTGLCanvas canvas = new AWTGLCanvas() {
 			private static final long serialVersionUID = 1L;
 
@@ -28,7 +28,7 @@ public class DrawOnDemandTest {
 				GL.createCapabilities();
 				glClearColor(0.3f, 0.4f, 0.5f, 1);
 			}
-			
+
 			@Override
 			public void paintGL() {
 				int w = getWidth();
@@ -54,7 +54,7 @@ public class DrawOnDemandTest {
 				if (SwingUtilities.isEventDispatchThread()) {
 					render();
 				} else {
-					SwingUtilities.invokeLater(() -> render());
+					SwingUtilities.invokeLater(this::render);
 				}
 			}
 
@@ -64,11 +64,18 @@ public class DrawOnDemandTest {
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		frame.getContentPane().setLayout(new BorderLayout());
 		frame.getContentPane().add(canvas, BorderLayout.CENTER);
+		frame.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosing(WindowEvent e) {
+				GL.setCapabilities(null);
+			}
+		});
 		canvas.setPreferredSize(new Dimension(200, 200));
 		canvas.addComponentListener(new ComponentAdapter() {
+			@Override
 			public void componentResized(java.awt.event.ComponentEvent e) {
 				canvas.repaint();
-			};
+			}
 		});
 		JColorChooser colorChooser = new JColorChooser(quadColor);
 		frame.getContentPane().add(colorChooser, BorderLayout.SOUTH);
@@ -76,7 +83,6 @@ public class DrawOnDemandTest {
 			quadColor = colorChooser.getColor();
 			canvas.repaint();
 		});
-		
 
 		SwingUtilities.invokeLater(() -> {
 			frame.pack();

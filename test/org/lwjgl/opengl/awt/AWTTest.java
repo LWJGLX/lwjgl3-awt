@@ -1,5 +1,7 @@
 package org.lwjgl.opengl.awt;
 
+import org.lwjgl.opengl.*;
+
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 
@@ -21,11 +23,13 @@ public class AWTTest {
         AWTGLCanvas canvas;
         frame.add(canvas = new AWTGLCanvas(data) {
             private static final long serialVersionUID = 1L;
+            @Override
             public void initGL() {
                 System.out.println("OpenGL version: " + effective.majorVersion + "." + effective.minorVersion + " (Profile: " + effective.profile + ")");
                 createCapabilities();
                 glClearColor(0.3f, 0.4f, 0.5f, 1);
             }
+            @Override
             public void paintGL() {
                 int w = getWidth();
                 int h = getHeight();
@@ -49,9 +53,12 @@ public class AWTTest {
         frame.transferFocus();
 
         Runnable renderLoop = new Runnable() {
-			public void run() {
-				if (!canvas.isValid())
-					return;
+			@Override
+            public void run() {
+				if (!canvas.isValid()) {
+                    GL.setCapabilities(null);
+                    return;
+                }
 				canvas.render();
 				SwingUtilities.invokeLater(this);
 			}
