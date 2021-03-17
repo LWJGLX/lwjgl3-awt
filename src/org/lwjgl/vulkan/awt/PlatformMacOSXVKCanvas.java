@@ -48,7 +48,6 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
 
     public long create(Canvas canvas, VKData data) throws AWTException {
         MemoryStack stack = MemoryStack.stackGet();
-        int ptr = stack.getPointer();
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
             int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
@@ -71,16 +70,12 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                             .sType(VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT)
                             .flags(0)
                             .pLayer(pLayer);
-                    LongBuffer surfaceAddr = memAllocLong(1);
-                    surfaceAddr.put(stack.nmalloc(8, 8));
-                    surfaceAddr.rewind();
-                    int err = vkCreateMetalSurfaceEXT(data.instance, sci, null, surfaceAddr);
-                    long surface = surfaceAddr.get(0);
-                    stack.setPointer(ptr);
+                    LongBuffer pSurface = stack.mallocLong(1);
+                    int err = vkCreateMetalSurfaceEXT(data.instance, sci, null, pSurface);
                     if (err != VK_SUCCESS) {
                         throw new AWTException("Calling vkCreateMetalSurfaceEXT failed with error: " + err);
                     }
-                    return surface;
+                    return pSurface.get(0);
                 } finally {
                     JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
                 }
