@@ -7,6 +7,7 @@ import static org.lwjgl.vulkan.VK10.*;
 import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.ByteBuffer;
+import java.nio.LongBuffer;
 
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -34,7 +35,6 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
 
     public long create(Canvas canvas, VKData data) throws AWTException {
         MemoryStack stack = MemoryStack.stackGet();
-        int ptr = stack.getPointer();
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
             int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
@@ -49,14 +49,12 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
                             .sType(VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR)
                             .hinstance(WinBase.GetModuleHandle((ByteBuffer) null))
                             .hwnd(hwnd);
-                    long surfaceAddr = stack.nmalloc(8, 8);
-                    int err = nvkCreateWin32SurfaceKHR(data.instance, sci.address(), 0L, surfaceAddr);
-                    long surface = MemoryUtil.memGetLong(surfaceAddr);
-                    stack.setPointer(ptr);
+                    LongBuffer pSurface = stack.mallocLong(1);
+                    int err = vkCreateWin32SurfaceKHR(data.instance, sci, null, pSurface);
                     if (err != VK_SUCCESS) {
                         throw new AWTException("Calling vkCreateWin32SurfaceKHR failed with error: " + err);
                     }
-                    return surface;
+                    return pSurface.get(0);
                 } finally {
                     JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
                 }
