@@ -1,7 +1,6 @@
 package org.lwjgl.vulkan.awt;
 
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
@@ -14,13 +13,14 @@ import java.awt.*;
 import java.nio.LongBuffer;
 
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
-import static org.lwjgl.vulkan.KHRXlibSurface.*;
+import static org.lwjgl.vulkan.KHRXlibSurface.VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+import static org.lwjgl.vulkan.KHRXlibSurface.vkCreateXlibSurfaceKHR;
 import static org.lwjgl.vulkan.VK10.VK_SUCCESS;
 
 public class PlatformX11VKCanvas implements PlatformVKCanvas {
     private static final JAWT awt;
     static {
-        awt = JAWT.calloc();
+        awt = JAWT.callocStack();
         awt.version(JAWT_VERSION_1_4);
         if (!JAWT_GetAWT(awt))
             throw new AssertionError("GetAWT failed");

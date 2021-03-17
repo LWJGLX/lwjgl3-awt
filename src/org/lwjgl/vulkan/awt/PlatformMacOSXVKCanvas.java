@@ -10,13 +10,11 @@ import org.lwjgl.system.macosx.ObjCRuntime;
 import org.lwjgl.vulkan.VkMetalSurfaceCreateInfoEXT;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 
-import javax.swing.JRootPane;
-import javax.swing.SwingUtilities;
+import javax.swing.*;
 import java.awt.*;
 import java.nio.LongBuffer;
 
 import static org.lwjgl.system.JNI.invokePPP;
-import static org.lwjgl.system.MemoryUtil.memAllocLong;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.system.macosx.ObjCRuntime.objc_getClass;
 import static org.lwjgl.system.macosx.ObjCRuntime.sel_getUid;
@@ -30,7 +28,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
     private static final long objc_msgSend;
     private static final long CATransaction;
     static {
-        awt = JAWT.calloc();
+        awt = JAWT.callocStack();
         awt.version(JAWT_VERSION_1_7);
         if (!JAWT_GetAWT(awt))
             throw new AssertionError("GetAWT failed");
