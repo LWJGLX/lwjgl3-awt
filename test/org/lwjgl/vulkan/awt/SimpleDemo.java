@@ -1,25 +1,22 @@
 package org.lwjgl.vulkan.awt;
 
-import static org.lwjgl.system.MemoryUtil.*;
-import static org.lwjgl.vulkan.EXTMetalSurface.VK_EXT_METAL_SURFACE_EXTENSION_NAME;
-import static org.lwjgl.vulkan.KHRSurface.*;
-import static org.lwjgl.vulkan.KHRWin32Surface.*;
-import static org.lwjgl.vulkan.KHRXlibSurface.*;
-import static org.lwjgl.vulkan.VK10.*;
-import static org.lwjgl.vulkan.awt.VKUtil.*;
-
-import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.nio.ByteBuffer;
-
-import javax.swing.JFrame;
-
 import org.lwjgl.PointerBuffer;
-import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.Platform;
 import org.lwjgl.vulkan.VkApplicationInfo;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkInstanceCreateInfo;
+
+import javax.swing.*;
+import java.awt.*;
+import java.nio.ByteBuffer;
+
+import static org.lwjgl.vulkan.EXTMetalSurface.VK_EXT_METAL_SURFACE_EXTENSION_NAME;
+import static org.lwjgl.vulkan.KHRSurface.VK_KHR_SURFACE_EXTENSION_NAME;
+import static org.lwjgl.vulkan.KHRWin32Surface.VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+import static org.lwjgl.vulkan.KHRXlibSurface.VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
+import static org.lwjgl.vulkan.VK10.*;
+import static org.lwjgl.vulkan.awt.VKUtil.translateVulkanResult;
 
 /**
  * Shows how to create a simple Vulkan instance and a {@link AWTVKCanvas}.
@@ -34,58 +31,56 @@ public class SimpleDemo {
      * @return the VkInstance handle
      */
     private static VkInstance createInstance() {
-        VkApplicationInfo appInfo = VkApplicationInfo.calloc()
-                .sType(VK_STRUCTURE_TYPE_APPLICATION_INFO)
-                .pApplicationName(memUTF8("AWT Vulkan Demo"))
-                .pEngineName(memUTF8(""))
-                .apiVersion(VK_MAKE_VERSION(1, 0, 2));
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkApplicationInfo appInfo = VkApplicationInfo.callocStack(stack)
+                    .sType(VK_STRUCTURE_TYPE_APPLICATION_INFO)
+                    .pApplicationName(stack.UTF8("AWT Vulkan Demo"))
+                    .pEngineName(stack.UTF8(""))
+                    .apiVersion(VK_MAKE_VERSION(1, 0, 2));
 
-        // Enhanced switch statement would work better :(
-        String surfaceExtension;
-        switch (Platform.get()) {
-            case WINDOWS: {
-                surfaceExtension = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
-                break;
+            // Enhanced switch statement would work better :(
+            String surfaceExtension;
+            switch (Platform.get()) {
+                case WINDOWS: {
+                    surfaceExtension = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+                    break;
+                }
+                case LINUX: {
+                    surfaceExtension = VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
+                    break;
+                }
+                case MACOSX: {
+                    surfaceExtension = VK_EXT_METAL_SURFACE_EXTENSION_NAME;
+                    break;
+                }
+                default:
+                    throw new RuntimeException("Failed to find the appropriate platform surface extension.");
             }
-            case LINUX: {
-                surfaceExtension = VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
-                break;
+
+
+            ByteBuffer VK_KHR_SURFACE_EXTENSION = stack.UTF8(VK_KHR_SURFACE_EXTENSION_NAME);
+            ByteBuffer VK_KHR_OS_SURFACE_EXTENSION = stack.UTF8(surfaceExtension);
+
+            PointerBuffer ppEnabledExtensionNames = stack.mallocPointer(2);
+            ppEnabledExtensionNames.put(VK_KHR_SURFACE_EXTENSION);
+            ppEnabledExtensionNames.put(VK_KHR_OS_SURFACE_EXTENSION);
+            ppEnabledExtensionNames.flip();
+            VkInstanceCreateInfo pCreateInfo = VkInstanceCreateInfo.callocStack(stack)
+                    .sType(VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO)
+                    .pNext(0L)
+                    .pApplicationInfo(appInfo);
+            if (ppEnabledExtensionNames.remaining() > 0) {
+                pCreateInfo.ppEnabledExtensionNames(ppEnabledExtensionNames);
             }
-            case MACOSX: {
-                surfaceExtension = VK_EXT_METAL_SURFACE_EXTENSION_NAME;
-                break;
+            PointerBuffer pInstance = stack.mallocPointer(1);
+            int err = vkCreateInstance(pCreateInfo, null, pInstance);
+            if (err != VK_SUCCESS) {
+                throw new RuntimeException("Failed to create VkInstance: " + translateVulkanResult(err));
             }
-            default: throw new RuntimeException("Failed to find the appropriate platform surface extension.");
-        }
+            long instance = pInstance.get(0);
+            return new VkInstance(instance, pCreateInfo);
 
-
-        ByteBuffer VK_KHR_SURFACE_EXTENSION = memUTF8(VK_KHR_SURFACE_EXTENSION_NAME);
-        ByteBuffer VK_KHR_OS_SURFACE_EXTENSION = memUTF8(surfaceExtension);
-
-        PointerBuffer ppEnabledExtensionNames = memAllocPointer(2);
-        ppEnabledExtensionNames.put(VK_KHR_SURFACE_EXTENSION);
-        ppEnabledExtensionNames.put(VK_KHR_OS_SURFACE_EXTENSION);
-        ppEnabledExtensionNames.flip();
-        VkInstanceCreateInfo pCreateInfo = VkInstanceCreateInfo.calloc()
-                .sType(VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO)
-                .pNext(0L)
-                .pApplicationInfo(appInfo);
-        if (ppEnabledExtensionNames.remaining() > 0) {
-            pCreateInfo.ppEnabledExtensionNames(ppEnabledExtensionNames);
         }
-        PointerBuffer pInstance = MemoryUtil.memAllocPointer(1);
-        int err = vkCreateInstance(pCreateInfo, null, pInstance);
-        if (err != VK_SUCCESS) {
-            throw new RuntimeException("Failed to create VkInstance: " + translateVulkanResult(err));
-        }
-        long instance = pInstance.get(0);
-        memFree(pInstance);
-        VkInstance ret = new VkInstance(instance, pCreateInfo);
-        memFree(ppEnabledExtensionNames);
-        memFree(VK_KHR_OS_SURFACE_EXTENSION);
-        memFree(VK_KHR_SURFACE_EXTENSION);
-        appInfo.free();
-        return ret;
     }
 
     public static void main(String[] args) {
