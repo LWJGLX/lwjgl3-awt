@@ -86,8 +86,7 @@ public class SimpleDemo {
     public static void main(String[] args) {
         // Create the Vulkan instance
         VkInstance instance = createInstance();
-        VKData data = new VKData();
-        data.instance = instance; // <- set Vulkan instance
+        VKData data = new VKData().setInstance(instance); // <- set Vulkan instance
         JFrame frame = new JFrame("AWT test");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setLayout(new BorderLayout());
