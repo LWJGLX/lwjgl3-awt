@@ -1,8 +1,8 @@
 package org.lwjgl.vulkan.awt;
 
-import java.awt.Canvas;
-
 import org.lwjgl.vulkan.VkInstance;
+
+import java.awt.*;
 
 /**
  * Contains necessary data to create an {@link AWTVKCanvas}.
@@ -16,4 +16,20 @@ public class VKData {
      */
     public VkInstance instance;
 
+    /**
+     * Sets the {@link #instance instance field} and returns this object.
+     * @param instance Vulkan instance
+     * @return this
+     */
+    public VKData setInstance(VkInstance instance) {
+    	this.instance = instance;
+    	return this;
+    }
+
+    /**
+     * @return the {@link #instance instance field}
+     */
+    public VkInstance getInstance() {
+        return instance;
+    }
 }
