@@ -3,12 +3,15 @@ package org.lwjgl.vulkan.awt;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.Platform;
+import org.lwjgl.vulkan.KHRSurface;
 import org.lwjgl.vulkan.VkApplicationInfo;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkInstanceCreateInfo;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.nio.ByteBuffer;
 
 import static org.lwjgl.vulkan.EXTMetalSurface.VK_EXT_METAL_SURFACE_EXTENSION_NAME;
@@ -91,17 +94,30 @@ public class SimpleDemo {
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setLayout(new BorderLayout());
         frame.setPreferredSize(new Dimension(600, 600));
-        frame.add(new AWTVKCanvas(data) {
+        AWTVKCanvas awtvkCanvas = new AWTVKCanvas(data) {
             private static final long serialVersionUID = 1L;
+
             public void initVK() {
                 @SuppressWarnings("unused")
                 long surface = this.surface;
 
                 // Do something with surface...
             }
+
             public void paintVK() {
             }
-        }, BorderLayout.CENTER);
+        };
+        frame.add(awtvkCanvas, BorderLayout.CENTER);
+
+        frame.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                super.windowClosing(e);
+
+                KHRSurface.vkDestroySurfaceKHR(instance, awtvkCanvas.surface, null);
+            }
+        });
+
         frame.pack();
         frame.setVisible(true);
     }
