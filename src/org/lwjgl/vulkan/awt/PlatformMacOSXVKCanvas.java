@@ -85,7 +85,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
         }
     }
 
-    // TODO: add this
+    // On macOS, all physical devices and queue families must be capable of presentation with any layer. As a result there is no macOS-specific query for these capabilities.
     public boolean getPhysicalDevicePresentationSupport(VkPhysicalDevice physicalDevice, int queueFamily) {
         return true;
     }
