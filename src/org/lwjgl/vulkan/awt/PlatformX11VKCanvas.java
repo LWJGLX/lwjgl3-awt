@@ -25,7 +25,7 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
 
     @Override
     public long create(Canvas canvas, VKData data) throws AWTException {
-        try (AWT awt = AWT.create(canvas)) {
+        try (AWT awt = new AWT(canvas)) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 JAWTX11DrawingSurfaceInfo dsiX11 = JAWTX11DrawingSurfaceInfo.create(awt.getPlatformInfo());
 

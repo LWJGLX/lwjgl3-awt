@@ -84,7 +84,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
     private native long createMTKView(long platformInfo, int x, int y, int width, int height);
 
     public long create(Canvas canvas, VKData data) throws AWTException {
-        try (AWT awt = AWT.create(canvas)) {
+        try (AWT awt = new AWT(canvas)) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
 
                 JAWTDrawingSurfaceInfo drawingSurfaceInfo = awt.getDrawingSurfaceInfo();

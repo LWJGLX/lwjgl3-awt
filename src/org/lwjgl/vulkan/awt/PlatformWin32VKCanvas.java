@@ -25,7 +25,7 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
     private static final int VK_ERROR_UNKNOWN = -13;
 
     public long create(Canvas canvas, VKData data) throws AWTException {
-        try (AWT awt = AWT.create(canvas)) {
+        try (AWT awt = new AWT(canvas)) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
 
                 // Get ptr to win32 struct

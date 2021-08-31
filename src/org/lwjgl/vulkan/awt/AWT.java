@@ -21,14 +21,28 @@ import static org.lwjgl.system.jawt.JAWTFunctions.*;
  */
 public class AWT implements AutoCloseable {
 
+	/**
+	 * JAWT object. Despite it being created from the stack,
+	 * it still lives on until after {@link #close()} is called.
+	 */
 	private final JAWT jawt;
+
+	/**
+	 * The drawing surface that is used.
+	 */
 	private final JAWTDrawingSurface drawingSurface;
+
+	/**
+	 * Drawing surface metadata.
+	 */
 	private final JAWTDrawingSurfaceInfo drawingSurfaceInfo;
 
 	/**
 	 * Initializes native window handlers from the desired AWT component.
 	 * The component MUST be a {@link Component}, but should be a canvas
 	 * or window for native rendering.
+	 * <p>
+	 * If not used in a try-with-resources block, call {@link #close()} when done.
 	 *
 	 * @param component a component to render onto
 	 * @throws AWTException Fails for one of the provided reasons:
@@ -78,10 +92,6 @@ public class AWT implements AutoCloseable {
 		}
 	}
 
-	public static AWT create(Canvas canvas) throws AWTException {
-		return new AWT(canvas);
-	}
-
 	/**
 	 * Returns a pointer to a platform-specific struct with platform-specific information.
 	 * <p>
@@ -102,6 +112,11 @@ public class AWT implements AutoCloseable {
 		return drawingSurfaceInfo;
 	}
 
+	/**
+	 * Frees memory and unlocks the drawing surface.
+	 * <p>
+	 * The JAWT object is implicitly freed(?).
+	 */
 	@Override
 	public void close() {
 		// Free and unlock
