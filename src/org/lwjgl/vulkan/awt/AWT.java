@@ -98,6 +98,10 @@ public class AWT implements AutoCloseable {
 		return drawingSurfaceInfo.platformInfo();
 	}
 
+	public JAWTDrawingSurfaceInfo getDrawingSurfaceInfo() {
+		return drawingSurfaceInfo;
+	}
+
 	@Override
 	public void close() {
 		// Free and unlock
