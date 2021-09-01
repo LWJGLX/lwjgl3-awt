@@ -1,8 +1,10 @@
 package org.lwjgl.vulkan.awt;
 
+import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTRectangle;
 import org.lwjgl.system.macosx.ObjCRuntime;
@@ -11,6 +13,7 @@ import org.lwjgl.vulkan.VkPhysicalDevice;
 
 import javax.swing.*;
 import java.awt.*;
+import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 
 import static org.lwjgl.vulkan.EXTMetalSurface.VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
@@ -109,7 +112,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                 VkMetalSurfaceCreateInfoEXT pCreateInfo = VkMetalSurfaceCreateInfoEXT
                         .callocStack(stack)
                         .sType(VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT)
-                        .pLayer(stack.pointers(metalLayer));
+                        .pLayer(PointerBuffer.create(metalLayer, 1));
 
                 LongBuffer pSurface = stack.mallocLong(1);
                 int result = vkCreateMetalSurfaceEXT(data.instance, pCreateInfo, null, pSurface);
