@@ -56,8 +56,8 @@ public class AWTThreadTest {
                 glClearColor(0.3f, 0.4f, 0.5f, 1);
             }
             public void paintGL() {
-                int w = getWidth();
-                int h = getHeight();
+                int w = getFramebufferWidth();
+                int h = getFramebufferHeight();
                 float aspect = (float) w / h;
                 double now = System.currentTimeMillis() * 0.001;
                 float width = (float) Math.abs(Math.sin(now * 0.3));

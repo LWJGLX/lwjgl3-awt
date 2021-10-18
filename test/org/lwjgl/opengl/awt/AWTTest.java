@@ -16,8 +16,6 @@ public class AWTTest {
         frame.setLayout(new BorderLayout());
         frame.setPreferredSize(new Dimension(600, 600));
         GLData data = new GLData();
-        data.samples = 4;
-        data.swapInterval = 0;
         AWTGLCanvas canvas;
         frame.add(canvas = new AWTGLCanvas(data) {
             private static final long serialVersionUID = 1L;
@@ -27,8 +25,8 @@ public class AWTTest {
                 glClearColor(0.3f, 0.4f, 0.5f, 1);
             }
             public void paintGL() {
-                int w = getWidth();
-                int h = getHeight();
+                int w = getFramebufferWidth();
+                int h = getFramebufferHeight();
                 float aspect = (float) w / h;
                 double now = System.currentTimeMillis() * 0.001;
                 float width = (float) Math.abs(Math.sin(now * 0.3));
@@ -47,7 +45,6 @@ public class AWTTest {
         frame.pack();
         frame.setVisible(true);
         frame.transferFocus();
-
         Runnable renderLoop = new Runnable() {
 			public void run() {
 				if (!canvas.isValid())

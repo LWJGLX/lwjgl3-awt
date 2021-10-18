@@ -31,8 +31,8 @@ public class DrawOnDemandTest {
 			
 			@Override
 			public void paintGL() {
-				int w = getWidth();
-				int h = getHeight();
+				int w = getFramebufferWidth();
+				int h = getFramebufferHeight();
 				if (w == 0 || h == 0) {
 					return;
 				}

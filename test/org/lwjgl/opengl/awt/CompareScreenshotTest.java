@@ -336,8 +336,8 @@ public class CompareScreenshotTest {
         }
 
         public void paintGL() {
-            int w = getWidth();
-            int h = getHeight();
+            int w = getFramebufferWidth();
+            int h = getFramebufferHeight();
             float aspect = (float) w / h;
             double now = 100;
             float width = (float) Math.abs(Math.sin(now * 0.3));

@@ -58,8 +58,8 @@ public class Core32Test {
                 aspectUniform = glGetUniformLocation(prog, "aspect");
             }
             public void paintGL() {
-                int w = getWidth();
-                int h = getHeight();
+                int w = getFramebufferWidth();
+                int h = getFramebufferHeight();
                 float aspect = (float) w / h;
                 glClear(GL_COLOR_BUFFER_BIT);
                 glViewport(0, 0, w, h);
