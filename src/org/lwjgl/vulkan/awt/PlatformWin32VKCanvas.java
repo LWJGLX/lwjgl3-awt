@@ -21,9 +21,6 @@ import static org.lwjgl.vulkan.VK10.*;
  */
 public class PlatformWin32VKCanvas implements PlatformVKCanvas {
 
-    // 3.2.3 does not include the newest VkResult code
-    private static final int VK_ERROR_UNKNOWN = -13;
-
     public long create(Canvas canvas, VKData data) throws AWTException {
         try (AWT awt = new AWT(canvas)) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -34,7 +31,8 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
                 // Gets a handle to the file used to create the calling process (.exe file)
                 long handle = WinBase.nGetModuleHandle(MemoryUtil.NULL);
 
-                VkWin32SurfaceCreateInfoKHR sci = VkWin32SurfaceCreateInfoKHR.callocStack(stack)
+                VkWin32SurfaceCreateInfoKHR sci = VkWin32SurfaceCreateInfoKHR
+                        .calloc(stack)
                         .sType(VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR)
                         .hinstance(handle)
                         .hwnd(dsiWin.hwnd());

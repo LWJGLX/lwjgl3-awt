@@ -57,7 +57,7 @@ public class AWT implements AutoCloseable {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 
 			jawt = JAWT
-					.callocStack(stack)
+					.calloc(stack)
 					.version(JAWT_VERSION_1_7);
 
 			// Initialize JAWT

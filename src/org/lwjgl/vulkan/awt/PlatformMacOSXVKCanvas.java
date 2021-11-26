@@ -29,9 +29,6 @@ import static org.lwjgl.vulkan.VK10.*;
  */
 public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
 
-    // 3.2.3 does not include the newest VkResult code
-    private static final int VK_ERROR_UNKNOWN = -13;
-
     // Pointer to a method that sends a message to an instance of a class
     // Apple spec: macOS 10.0 (OSX 10; 2001) or higher
     private static final long objc_msgSend;
@@ -110,7 +107,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                 caFlush();
 
                 VkMetalSurfaceCreateInfoEXT pCreateInfo = VkMetalSurfaceCreateInfoEXT
-                        .callocStack(stack)
+                        .calloc(stack)
                         .sType(VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT)
                         .pLayer(PointerBuffer.create(metalLayer, 1));
 

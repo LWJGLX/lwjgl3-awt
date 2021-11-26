@@ -20,9 +20,6 @@ import static org.lwjgl.vulkan.VK10.*;
  */
 public class PlatformX11VKCanvas implements PlatformVKCanvas {
 
-    // 3.2.3 does not include the newest VkResult code
-    private static final int VK_ERROR_UNKNOWN = -13;
-
     @Override
     public long create(Canvas canvas, VKData data) throws AWTException {
         try (AWT awt = new AWT(canvas)) {
@@ -30,7 +27,7 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
                 JAWTX11DrawingSurfaceInfo dsiX11 = JAWTX11DrawingSurfaceInfo.create(awt.getPlatformInfo());
 
                 VkXlibSurfaceCreateInfoKHR pCreateInfo = VkXlibSurfaceCreateInfoKHR
-                        .callocStack(stack)
+                        .calloc(stack)
                         .dpy(dsiX11.display())
                         .window(dsiX11.drawable());
 
