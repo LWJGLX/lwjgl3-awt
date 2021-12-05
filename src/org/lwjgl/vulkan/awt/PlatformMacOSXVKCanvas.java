@@ -4,7 +4,6 @@ import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTRectangle;
 import org.lwjgl.system.macosx.ObjCRuntime;
@@ -13,7 +12,6 @@ import org.lwjgl.vulkan.VkPhysicalDevice;
 
 import javax.swing.*;
 import java.awt.*;
-import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 
 import static org.lwjgl.vulkan.EXTMetalSurface.VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
@@ -114,33 +112,36 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                 LongBuffer pSurface = stack.mallocLong(1);
                 int result = vkCreateMetalSurfaceEXT(data.instance, pCreateInfo, null, pSurface);
 
-                // Possible VkResult codes returned
-                if (result == VK_SUCCESS) {
-                    return pSurface.get(0);
-                }
-                if (result == VK_ERROR_OUT_OF_HOST_MEMORY) {
-                    throw new AWTException("Failed to create a Vulkan surface: out of host memory.");
-                }
-                if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
-                    throw new AWTException("Failed to create a Vulkan surface: out of device memory.");
-                }
-                if (result == VK_ERROR_NATIVE_WINDOW_IN_USE_KHR) {
-                    throw new AWTException("Failed to create a Vulkan surface: the requested window is already in use.");
-                }
+                switch (result) {
+                    case VK_SUCCESS:
+                        return pSurface.get(0);
 
-                // Error unknown to the implementation
-                if (result == VK_ERROR_UNKNOWN) {
-                    throw new AWTException("An unknown error occurred. This may be because of an invalid input, " +
-                            "or because the Vulkan implementation has a bug.");
-                }
+                    // Possible VkResult codes returned
+                    case VK_ERROR_OUT_OF_HOST_MEMORY:
+                        throw new AWTException("Failed to create a Vulkan surface: a host memory allocation has failed.");
+                    case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+                        throw new AWTException("Failed to create a Vulkan surface: a device memory allocation has failed.");
 
-                // Unknown error not included in this list
-                throw new AWTException("Calling vkCreateWin32SurfaceKHR failed with unknown Vulkan error: " + result);
+                    // vkCreateMetalSurfaceEXT return code
+                    case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR:
+                        throw new AWTException("Failed to create a Vulkan surface:" +
+                                " the requested window is already in use by Vulkan or another API in a manner which prevents it from being used again.");
+
+                    // Error unknown to the implementation
+                    case VK_ERROR_UNKNOWN:
+                        throw new AWTException("An unknown error has occurred;" +
+                                " either the application has provided invalid input, or an implementation failure has occurred.");
+
+                    // Unknown error not included in this list
+                    default:
+                        throw new AWTException("Calling vkCreateMetalSurfaceEXT failed with unknown Vulkan error: " + result);
+                }
             }
         }
     }
 
-    // On macOS, all physical devices and queue families must be capable of presentation with any layer. As a result there is no macOS-specific query for these capabilities.
+    // On macOS, all physical devices and queue families must be capable of presentation with any layer.
+    // As a result there is no macOS-specific query for these capabilities.
     public boolean getPhysicalDevicePresentationSupport(VkPhysicalDevice physicalDevice, int queueFamily) {
         return true;
     }

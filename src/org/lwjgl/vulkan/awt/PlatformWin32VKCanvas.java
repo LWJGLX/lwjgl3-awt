@@ -40,25 +40,25 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
                 LongBuffer pSurface = stack.mallocLong(1);
                 int result = vkCreateWin32SurfaceKHR(data.instance, sci, null, pSurface);
 
-                // Possible VkResult codes returned
-                if (result == VK_SUCCESS) {
-                    return pSurface.get(0);
-                }
-                if (result == VK_ERROR_OUT_OF_HOST_MEMORY) {
-                    throw new AWTException("Failed to create a Vulkan surface: out of host memory.");
-                }
-                if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
-                    throw new AWTException("Failed to create a Vulkan surface: out of device memory.");
-                }
+                switch (result) {
+                    case VK_SUCCESS:
+                        return pSurface.get(0);
 
-                // Error unknown to the implementation
-                if (result == VK_ERROR_UNKNOWN) {
-                    throw new AWTException("An unknown error occurred. This may be because of an invalid input, " +
-                            "or because the Vulkan implementation has a bug.");
-                }
+                    // Possible VkResult codes returned
+                    case VK_ERROR_OUT_OF_HOST_MEMORY:
+                        throw new AWTException("Failed to create a Vulkan surface: a host memory allocation has failed.");
+                    case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+                        throw new AWTException("Failed to create a Vulkan surface: a device memory allocation has failed.");
 
-                // Unknown error not included in this list
-                throw new AWTException("Calling vkCreateWin32SurfaceKHR failed with unknown Vulkan error: " + result);
+                    // Error unknown to the implementation
+                    case VK_ERROR_UNKNOWN:
+                        throw new AWTException("An unknown error has occurred;" +
+                                " either the application has provided invalid input, or an implementation failure has occurred.");
+
+                    // Unknown error not included in this list
+                    default:
+                        throw new AWTException("Calling vkCreateWin32SurfaceKHR failed with unknown Vulkan error: " + result);
+                }
             }
         }
     }
