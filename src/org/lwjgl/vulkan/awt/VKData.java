@@ -9,6 +9,7 @@ import java.awt.*;
  * 
  * @author Kai Burjack
  */
+@Deprecated
 public class VKData {
 
     /**

@@ -4,6 +4,7 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWTWin32DrawingSurfaceInfo;
 import org.lwjgl.system.windows.WinBase;
+import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 import org.lwjgl.vulkan.VkWin32SurfaceCreateInfoKHR;
 
@@ -21,7 +22,18 @@ import static org.lwjgl.vulkan.VK10.*;
  */
 public class PlatformWin32VKCanvas implements PlatformVKCanvas {
 
+    public static final String EXTENSION_NAME = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+
+    /**
+     * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
+     */
+    @Deprecated
+    @Override
     public long create(Canvas canvas, VKData data) throws AWTException {
+        return create(canvas, data.instance);
+    }
+
+    static long create(Canvas canvas, VkInstance instance) throws AWTException {
         try (AWT awt = new AWT(canvas)) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
 
@@ -38,7 +50,7 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
                         .hwnd(dsiWin.hwnd());
 
                 LongBuffer pSurface = stack.mallocLong(1);
-                int result = vkCreateWin32SurfaceKHR(data.instance, sci, null, pSurface);
+                int result = vkCreateWin32SurfaceKHR(instance, sci, null, pSurface);
 
                 switch (result) {
                     case VK_SUCCESS:
@@ -63,8 +75,16 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
         }
     }
 
-    public boolean getPhysicalDevicePresentationSupport(VkPhysicalDevice physicalDevice, int queueFamily) {
-        return vkGetPhysicalDeviceWin32PresentationSupportKHR(physicalDevice, queueFamily);
+    /**
+     * @deprecated use {@link AWTVK#checkSupport(VkPhysicalDevice, int)}
+     */
+    @Override
+    @Deprecated
+    public boolean getPhysicalDevicePresentationSupport(VkPhysicalDevice physicalDevice, int queueFamilyIndex) {
+        return vkGetPhysicalDeviceWin32PresentationSupportKHR(physicalDevice, queueFamilyIndex);
     }
 
+    static boolean checkSupport(VkPhysicalDevice physicalDevice, int queueFamilyIndex) {
+        return vkGetPhysicalDeviceWin32PresentationSupportKHR(physicalDevice, queueFamilyIndex);
+    }
 }

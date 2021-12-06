@@ -2,14 +2,14 @@ package org.lwjgl.vulkan.awt;
 
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo;
-import org.lwjgl.vulkan.KHRXlibSurface;
+import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 import org.lwjgl.vulkan.VkXlibSurfaceCreateInfoKHR;
 
 import java.awt.*;
 import java.nio.LongBuffer;
 
-import static org.lwjgl.vulkan.KHRXlibSurface.vkCreateXlibSurfaceKHR;
+import static org.lwjgl.vulkan.KHRXlibSurface.*;
 import static org.lwjgl.vulkan.VK10.*;
 
 /**
@@ -20,8 +20,18 @@ import static org.lwjgl.vulkan.VK10.*;
  */
 public class PlatformX11VKCanvas implements PlatformVKCanvas {
 
+    public static final String EXTENSION_NAME = VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
+
+    /**
+     * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
+     */
     @Override
+    @Deprecated
     public long create(Canvas canvas, VKData data) throws AWTException {
+        return create(canvas, data.instance);
+    }
+
+    static long create(Canvas canvas, VkInstance instance) throws AWTException {
         try (AWT awt = new AWT(canvas)) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 JAWTX11DrawingSurfaceInfo dsiX11 = JAWTX11DrawingSurfaceInfo.create(awt.getPlatformInfo());
@@ -32,7 +42,7 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
                         .window(dsiX11.drawable());
 
                 LongBuffer pSurface = stack.mallocLong(1);
-                int result = vkCreateXlibSurfaceKHR(data.instance, pCreateInfo, null, pSurface);
+                int result = vkCreateXlibSurfaceKHR(instance, pCreateInfo, null, pSurface);
 
                 switch (result) {
                     case VK_SUCCESS:
@@ -57,8 +67,16 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
         }
     }
 
+    /**
+     * @deprecated use {@link AWTVK#checkSupport(VkPhysicalDevice, int)}
+     */
     @Override
+    @Deprecated
     public boolean getPhysicalDevicePresentationSupport(VkPhysicalDevice physicalDevice, int queueFamily) {
-        return KHRXlibSurface.vkGetPhysicalDeviceXlibPresentationSupportKHR(physicalDevice, queueFamily, 0, 0);
+        return checkSupport(physicalDevice, queueFamily);
+    }
+
+    static boolean checkSupport(VkPhysicalDevice physicalDevice, int queueFamilyIndex) {
+        return vkGetPhysicalDeviceXlibPresentationSupportKHR(physicalDevice, queueFamilyIndex, 0, 0);
     }
 }

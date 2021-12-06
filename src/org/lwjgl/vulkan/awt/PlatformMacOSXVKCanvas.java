@@ -7,6 +7,7 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTRectangle;
 import org.lwjgl.system.macosx.ObjCRuntime;
+import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkMetalSurfaceCreateInfoEXT;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 
@@ -14,8 +15,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.nio.LongBuffer;
 
-import static org.lwjgl.vulkan.EXTMetalSurface.VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
-import static org.lwjgl.vulkan.EXTMetalSurface.vkCreateMetalSurfaceEXT;
+import static org.lwjgl.vulkan.EXTMetalSurface.*;
 import static org.lwjgl.vulkan.KHRSurface.VK_ERROR_NATIVE_WINDOW_IN_USE_KHR;
 import static org.lwjgl.vulkan.VK10.*;
 
@@ -26,6 +26,8 @@ import static org.lwjgl.vulkan.VK10.*;
  * @author SWinxy
  */
 public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
+
+    public static final String EXTENSION_NAME = VK_EXT_METAL_SURFACE_EXTENSION_NAME;
 
     // Pointer to a method that sends a message to an instance of a class
     // Apple spec: macOS 10.0 (OSX 10; 2001) or higher
@@ -81,7 +83,15 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
      */
     private native long createMTKView(long platformInfo, int x, int y, int width, int height);
 
+    /**
+     * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
+     */
+    @Deprecated
     public long create(Canvas canvas, VKData data) throws AWTException {
+        return create(canvas, data.instance);
+    }
+
+    static long create(Canvas canvas, VkInstance instance) throws AWTException {
         try (AWT awt = new AWT(canvas)) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
 
@@ -100,7 +110,8 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                 }
 
                 // Get pointer to CAMetalLayer object representing the renderable surface
-                long metalLayer = createMTKView(drawingSurfaceInfo.platformInfo(), x, y, bounds.width(), bounds.height());
+                // Using constructor because I don't know if it's backwards-compatible to be static
+                long metalLayer = new PlatformMacOSXVKCanvas().createMTKView(drawingSurfaceInfo.platformInfo(), x, y, bounds.width(), bounds.height());
 
                 caFlush();
 
@@ -110,7 +121,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                         .pLayer(PointerBuffer.create(metalLayer, 1));
 
                 LongBuffer pSurface = stack.mallocLong(1);
-                int result = vkCreateMetalSurfaceEXT(data.instance, pCreateInfo, null, pSurface);
+                int result = vkCreateMetalSurfaceEXT(instance, pCreateInfo, null, pSurface);
 
                 switch (result) {
                     case VK_SUCCESS:
@@ -140,10 +151,17 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
         }
     }
 
-    // On macOS, all physical devices and queue families must be capable of presentation with any layer.
-    // As a result there is no macOS-specific query for these capabilities.
+    /**
+     * @deprecated use {@link AWTVK#checkSupport(VkPhysicalDevice, int)}
+     */
+    @Deprecated
     public boolean getPhysicalDevicePresentationSupport(VkPhysicalDevice physicalDevice, int queueFamily) {
         return true;
     }
 
+    // On macOS, all physical devices and queue families must be capable of presentation with any layer.
+    // As a result there is no macOS-specific query for these capabilities.
+    static boolean checkSupport(VkPhysicalDevice physicalDevice, int queueFamilyIndex) {
+        return true;
+    }
 }
