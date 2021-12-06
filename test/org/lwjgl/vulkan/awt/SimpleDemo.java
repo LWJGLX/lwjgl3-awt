@@ -35,7 +35,8 @@ public class SimpleDemo {
      */
     private static VkInstance createInstance() {
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkApplicationInfo appInfo = VkApplicationInfo.callocStack(stack)
+            VkApplicationInfo appInfo = VkApplicationInfo
+                    .calloc(stack)
                     .sType(VK_STRUCTURE_TYPE_APPLICATION_INFO)
                     .pApplicationName(stack.UTF8("AWT Vulkan Demo"))
                     .pEngineName(stack.UTF8(""))
@@ -68,7 +69,8 @@ public class SimpleDemo {
             ppEnabledExtensionNames.put(VK_KHR_SURFACE_EXTENSION);
             ppEnabledExtensionNames.put(VK_KHR_OS_SURFACE_EXTENSION);
             ppEnabledExtensionNames.flip();
-            VkInstanceCreateInfo pCreateInfo = VkInstanceCreateInfo.callocStack(stack)
+            VkInstanceCreateInfo pCreateInfo = VkInstanceCreateInfo
+                    .calloc(stack)
                     .sType(VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO)
                     .pNext(0L)
                     .pApplicationInfo(appInfo);

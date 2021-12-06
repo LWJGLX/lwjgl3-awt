@@ -1,9 +1,6 @@
 package org.lwjgl.vulkan.awt;
 
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.jawt.JAWT;
-import org.lwjgl.system.jawt.JAWTDrawingSurface;
-import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo;
 import org.lwjgl.vulkan.KHRXlibSurface;
 import org.lwjgl.vulkan.VkPhysicalDevice;
@@ -12,55 +9,51 @@ import org.lwjgl.vulkan.VkXlibSurfaceCreateInfoKHR;
 import java.awt.*;
 import java.nio.LongBuffer;
 
-import static org.lwjgl.system.jawt.JAWTFunctions.*;
-import static org.lwjgl.vulkan.KHRXlibSurface.VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
 import static org.lwjgl.vulkan.KHRXlibSurface.vkCreateXlibSurfaceKHR;
-import static org.lwjgl.vulkan.VK10.VK_SUCCESS;
+import static org.lwjgl.vulkan.VK10.*;
 
+/**
+ * X11-specific implementation of {@link PlatformVKCanvas}.
+ *
+ * @author Guenther
+ * @author SWinxy
+ */
 public class PlatformX11VKCanvas implements PlatformVKCanvas {
-    private static final JAWT awt;
-    static {
-        awt = JAWT.callocStack();
-        awt.version(JAWT_VERSION_1_4);
-        if (!JAWT_GetAWT(awt))
-            throw new AssertionError("GetAWT failed");
-    }
 
     @Override
     public long create(Canvas canvas, VKData data) throws AWTException {
-        MemoryStack stack = MemoryStack.stackGet();
-        JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
-        try {
-            int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
-            if ((lock & JAWT_LOCK_ERROR) != 0)
-                throw new AWTException("JAWT_DrawingSurface_Lock() failed");
-            try {
-                JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
-                try {
-                    JAWTX11DrawingSurfaceInfo dsiX11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
-                    long display = dsiX11.display();
-                    long window = dsiX11.drawable();
+        try (AWT awt = new AWT(canvas)) {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                JAWTX11DrawingSurfaceInfo dsiX11 = JAWTX11DrawingSurfaceInfo.create(awt.getPlatformInfo());
 
-                    VkXlibSurfaceCreateInfoKHR sci = VkXlibSurfaceCreateInfoKHR.callocStack(stack)
-                            .sType(VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR)
-                            .dpy(display)
-                            .window(window);
+                VkXlibSurfaceCreateInfoKHR pCreateInfo = VkXlibSurfaceCreateInfoKHR
+                        .calloc(stack)
+                        .dpy(dsiX11.display())
+                        .window(dsiX11.drawable());
 
-                    LongBuffer pSurface = stack.mallocLong(1);
-                    int err = vkCreateXlibSurfaceKHR(data.instance, sci, null, pSurface);
-                    if (err != VK_SUCCESS) {
-                        throw new AWTException("Calling vkCreateXlibSurfaceKHR failed with error: " + err);
-                    }
+                LongBuffer pSurface = stack.mallocLong(1);
+                int result = vkCreateXlibSurfaceKHR(data.instance, pCreateInfo, null, pSurface);
 
-                    return pSurface.get(0);
-                } finally {
-                    JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
+                switch (result) {
+                    case VK_SUCCESS:
+                        return pSurface.get(0);
+
+                    // Possible VkResult codes returned
+                    case VK_ERROR_OUT_OF_HOST_MEMORY:
+                        throw new AWTException("Failed to create a Vulkan surface: a host memory allocation has failed.");
+                    case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+                        throw new AWTException("Failed to create a Vulkan surface: a device memory allocation has failed.");
+
+                    // Error unknown to the implementation
+                    case VK_ERROR_UNKNOWN:
+                        throw new AWTException("An unknown error has occurred;" +
+                                " either the application has provided invalid input, or an implementation failure has occurred.");
+
+                    // Unknown error not included in this list
+                    default:
+                        throw new AWTException("Calling vkCreateXlibSurfaceKHR failed with unknown Vulkan error: " + result);
                 }
-            } finally {
-                JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
             }
-        } finally {
-            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
         }
     }
 
