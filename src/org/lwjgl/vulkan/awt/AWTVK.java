@@ -13,14 +13,6 @@ import java.awt.*;
 public class AWTVK {
 
 	/**
-	 * Checks if the platform is supported using lwjgl3-awt.
-	 * This does not check for the minimum OS version.
-	 */
-	public static boolean isPlatformSupported() {
-		return Platform.get() == Platform.WINDOWS || Platform.get() == Platform.MACOSX || Platform.get() == Platform.LINUX;
-	}
-
-	/**
 	 * Gets the required surface extension for the platform.
 	 * Also enable {@link org.lwjgl.vulkan.KHRSurface#VK_KHR_SURFACE_EXTENSION_NAME VK_KHR_SURFACE_EXTENSION_NAME}.
 	 */

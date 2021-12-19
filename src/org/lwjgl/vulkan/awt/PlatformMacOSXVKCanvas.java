@@ -1,6 +1,7 @@
 package org.lwjgl.vulkan.awt;
 
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.awt.AWT;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryStack;

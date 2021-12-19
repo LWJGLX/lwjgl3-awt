@@ -1,7 +1,8 @@
-package org.lwjgl.vulkan.awt;
+package org.lwjgl.awt;
 
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.Platform;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
@@ -90,6 +91,14 @@ public class AWT implements AutoCloseable {
 				throw new AWTException("An unknown error occurred. Failed to retrieve platform-specific information.");
 			}
 		}
+	}
+
+	/**
+	 * Checks if the platform is supported using lwjgl3-awt.
+	 * This does not check for the minimum OS version.
+	 */
+	public static boolean isPlatformSupported() {
+		return Platform.get() == Platform.WINDOWS || Platform.get() == Platform.MACOSX || Platform.get() == Platform.LINUX;
 	}
 
 	/**

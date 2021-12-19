@@ -1,5 +1,6 @@
 package org.lwjgl.vulkan.awt;
 
+import org.lwjgl.awt.AWT;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo;
 import org.lwjgl.vulkan.VkInstance;

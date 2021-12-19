@@ -1,6 +1,7 @@
 package org.lwjgl.vulkan.awt;
 
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.awt.AWT;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRSurface;
 import org.lwjgl.vulkan.VkApplicationInfo;
@@ -59,7 +60,7 @@ public class SimpleDemo {
     }
 
     public static void main(String[] args) throws AWTException {
-        if (!AWTVK.isPlatformSupported()) {
+        if (!AWT.isPlatformSupported()) {
             throw new RuntimeException("Platform not supported.");
         }
 
