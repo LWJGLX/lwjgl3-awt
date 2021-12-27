@@ -1,5 +1,6 @@
 package org.lwjgl.opengl.awt;
 
+import org.lwjgl.awt.MacOSX;
 import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
@@ -7,22 +8,15 @@ import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.macosx.ObjCRuntime;
 
-import javax.swing.JRootPane;
-import javax.swing.SwingUtilities;
+import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ComponentEvent;
-import java.awt.event.ComponentListener;
 import java.awt.event.HierarchyEvent;
-import java.awt.event.HierarchyListener;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 import static org.lwjgl.opengl.CGL.*;
-import static org.lwjgl.opengl.GL11.glAreTexturesResident;
 import static org.lwjgl.opengl.GL11.glFlush;
-import static org.lwjgl.system.JNI.invokePPP;
-import static org.lwjgl.system.JNI.invokePPPP;
-import static org.lwjgl.system.JNI.invokePPPV;
+import static org.lwjgl.system.JNI.*;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.system.macosx.ObjCRuntime.objc_getClass;
 import static org.lwjgl.system.macosx.ObjCRuntime.sel_getUid;
@@ -75,7 +69,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     public static final JAWT awt;
     private static final long objc_msgSend;
-    private static final long CATransaction;
     private static final long NSOpenGLPixelFormat;
 
     static {
@@ -85,7 +78,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             throw new AssertionError("GetAWT failed");
         Library.loadSystem("org.lwjgl.awt", "lwjgl3awt");
         objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
-        CATransaction = objc_getClass("CATransaction");
         NSOpenGLPixelFormat = objc_getClass("NSOpenGLPixelFormat");
     }
 
@@ -93,11 +85,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private long view;
     private int width;
     private int height;
-
-    // core animation flush
-    private static void caFlush() {
-        invokePPP(CATransaction, sel_getUid("flush"), objc_msgSend);
-    }
 
     private native long createView(long platformInfo, long pixelFormat, int x, int y, int width, int height);
 
@@ -114,7 +101,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     invokePPPV(layer, sel_getUid("setHidden:"), 1, objc_msgSend);
                 }
                 // flush the new state to the CoreAnimation pipeline, to actually get the new state displayed
-                caFlush();
+                MacOSX.caFlush();
             }
         });
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
@@ -215,7 +202,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     pixelFormat = invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"), MemoryUtil.memAddress(attribsArray), objc_msgSend);
 
                     view = createView(dsi.platformInfo(), pixelFormat, dsi.bounds().x(), dsi.bounds().y(), width, height);
-                    caFlush();
+                    // view = MacOSX.createOpenGLView(canvas, dsi, pixelFormat);
+                    MacOSX.caFlush();
                     long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
                     return invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
                 } finally {
