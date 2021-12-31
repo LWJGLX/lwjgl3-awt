@@ -95,11 +95,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
             if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
                 long layer = invokePPP(view, sel_getUid("layer"), objc_msgSend);
-                if (e.getChanged().isShowing()) {
-                    invokePPPV(layer, sel_getUid("setHidden:"), 0, objc_msgSend);
-                } else {
-                    invokePPPV(layer, sel_getUid("setHidden:"), 1, objc_msgSend);
-                }
+                invokePPPV(layer, sel_getUid("setHidden:"), e.getChanged().isShowing() ? 0 : 1, objc_msgSend);
                 // flush the new state to the CoreAnimation pipeline, to actually get the new state displayed
                 MacOSX.caFlush();
             }
@@ -121,7 +117,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     }
                     width = dsi.bounds().width();
                     height = dsi.bounds().height();
-                    long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
 
                     //TODO: we don't really need 100
                     ByteBuffer attribsArray = ByteBuffer.allocateDirect(4 * 100).order(ByteOrder.nativeOrder());
@@ -195,10 +190,9 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     }
 
                     // 0 Terminated
-                    attribsArray.putInt(0);
+                    attribsArray.putInt(0).rewind();
 
-                    attribsArray.rewind();
-
+                    long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
                     pixelFormat = invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"), MemoryUtil.memAddress(attribsArray), objc_msgSend);
 
                     view = createView(dsi.platformInfo(), pixelFormat, dsi.bounds().x(), dsi.bounds().y(), width, height);
@@ -273,7 +267,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     }
 
     @Override
-    public void unlock() throws AWTException {
+    public void unlock() {
         JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
     }
 

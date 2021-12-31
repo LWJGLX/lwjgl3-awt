@@ -16,6 +16,7 @@ import org.lwjgl.system.windows.*;
 import java.awt.*;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -202,7 +203,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         }
 
         // Query supported WGL extensions
-        String wglExtensions = null;
+        String wglExtensions;
         long wglGetExtensionsStringARBAddr = WGL.wglGetProcAddress("wglGetExtensionsStringARB");
         if (wglGetExtensionsStringARBAddr != 0L) {
             long str = JNI.callPP(hDCdummy, wglGetExtensionsStringARBAddr);
@@ -226,10 +227,8 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             }
         }
         String[] splitted = wglExtensions.split(" ");
-        Set<String> wglExtensionsList = new HashSet<String>(splitted.length);
-        for (String str : splitted) {
-            wglExtensionsList.add(str);
-        }
+        Set<String> wglExtensionsList = new HashSet<>(splitted.length);
+        wglExtensionsList.addAll(Arrays.asList(splitted));
         success = User32.ReleaseDC(dummyWindowHandle, hDCdummy);
         if (!success) {
             WGL.wglDeleteContext(dummyContext);
