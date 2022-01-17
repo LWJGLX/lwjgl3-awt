@@ -31,6 +31,16 @@
 			<organization>LWJGLX</organization>
 			<organizationUrl>https://lwjglx.org</organizationUrl>
 		</developer>
+		<developer>
+			<id>SWinxy</id>
+			<email>contact@swinxy.me</email>
+			<organization>HeliumArgon</organization>
+			<organizationUrl>https://heliumargon.net</organizationUrl>
+			<timezone>America/New_York</timezone>
+			<properties>
+				<twitter>@SWinxyTheCat</twitter>
+			</properties>
+		</developer>
 	</developers>
 	<properties>
 		<lwjgl.version>3.3.0</lwjgl.version>
