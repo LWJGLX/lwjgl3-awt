@@ -34,7 +34,7 @@
 	</developers>
 	<properties>
 		<lwjgl.version>3.3.0</lwjgl.version>
-		<junit.version>5.7.0</junit.version>
+		<junit.version>5.8.2</junit.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<maven.compiler.source>1.8</maven.compiler.source>
@@ -64,21 +64,11 @@
 	</distributionManagement>
 	<profiles>
 		<profile>
-			<id>windows</id>
+			<id>lwjgl-natives-linux-amd64</id>
 			<activation>
 				<os>
-					<family>Windows</family>
-				</os>
-			</activation>
-			<properties>
-				<platform>windows</platform>
-			</properties>
-		</profile>
-		<profile>
-			<id>linux</id>
-			<activation>
-				<os>
-					<family>Linux</family>
+					<family>unix</family>
+					<arch>amd64</arch>
 				</os>
 			</activation>
 			<properties>
@@ -86,14 +76,113 @@
 			</properties>
 		</profile>
 		<profile>
-			<id>mac</id>
+			<id>lwjgl-natives-linux-aarch64</id>
 			<activation>
 				<os>
-					<family>Mac</family>
+					<family>unix</family>
+					<arch>aarch64</arch>
 				</os>
 			</activation>
 			<properties>
-				<platform>macos</platform>
+				<platform>linux-arm64</platform>
+			</properties>
+		</profile>
+		<profile>
+			<id>lwjgl-natives-linux-arm</id>
+			<activation>
+				<os>
+					<family>unix</family>
+					<arch>arm</arch>
+				</os>
+			</activation>
+			<properties>
+				<platform>linux-arm32</platform>
+			</properties>
+		</profile>
+		<profile>
+			<id>lwjgl-natives-linux-arm32</id>
+			<activation>
+				<os>
+					<family>unix</family>
+					<arch>arm32</arch>
+				</os>
+			</activation>
+			<properties>
+				<platform>linux-arm32</platform>
+			</properties>
+		</profile>
+		<profile>
+			<id>lwjgl-natives-macos-amd64</id>
+			<activation>
+				<os>
+					<family>mac</family>
+					<arch>amd64</arch>
+				</os>
+			</activation>
+			<properties>
+				<lwjgl.natives>macos</lwjgl.natives>
+			</properties>
+			<dependencies>
+				<dependency>
+					<groupId>org.lwjgl</groupId>
+					<artifactId>lwjgl-vulkan</artifactId>
+					<classifier>macos</classifier>
+				</dependency>
+			</dependencies>
+		</profile>
+		<profile>
+			<id>lwjgl-natives-macos-aarch64</id>
+			<activation>
+				<os>
+					<family>mac</family>
+					<arch>aarch64</arch>
+				</os>
+			</activation>
+			<properties>
+				<platform>macos-arm64</platform>
+			</properties>
+			<dependencies>
+				<dependency>
+					<groupId>org.lwjgl</groupId>
+					<artifactId>lwjgl-vulkan</artifactId>
+					<classifier>natives-macos-arm64</classifier>
+				</dependency>
+			</dependencies>
+		</profile>
+		<profile>
+			<id>lwjgl-natives-windows-amd64</id>
+			<activation>
+				<os>
+					<family>windows</family>
+					<arch>amd64</arch>
+				</os>
+			</activation>
+			<properties>
+				<platform>windows</platform>
+			</properties>
+		</profile>
+		<profile>
+			<id>lwjgl-natives-windows-x86</id>
+			<activation>
+				<os>
+					<family>windows</family>
+					<arch>x86</arch>
+				</os>
+			</activation>
+			<properties>
+				<platform>windows-x86</platform>
+			</properties>
+		</profile>
+		<profile>
+			<id>lwjgl-natives-windows-aarch64</id>
+			<activation>
+				<os>
+					<family>windows</family>
+					<arch>aarch64</arch>
+				</os>
+			</activation>
+			<properties>
+				<platform>windows-arm64</platform>
 			</properties>
 		</profile>
 		<profile>
@@ -279,8 +368,22 @@
 			<snapshots>
 				<enabled>true</enabled>
 			</snapshots>
+			<releases><enabled>false</enabled></releases>
 		</repository>
 	</repositories>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl-bom</artifactId>
+				<version>${lwjgl.version}</version>
+				<scope>import</scope>
+				<type>pom</type>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
 	<dependencies>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
@@ -315,15 +418,7 @@
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-vulkan</artifactId>
-			<version>${lwjgl.version}</version>
 			<optional>true</optional>
-		</dependency>
-		<dependency>
-			<groupId>org.lwjgl</groupId>
-			<artifactId>lwjgl-vulkan</artifactId>
-			<version>${lwjgl.version}</version>
-			<classifier>natives-${platform}</classifier>
-			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
@@ -341,7 +436,7 @@
 		<dependency>
 			<groupId>com.github.romankh3</groupId>
 			<artifactId>image-comparison</artifactId>
-			<version>4.3.0</version>
+			<version>4.4.0</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
