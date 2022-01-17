@@ -1,6 +1,5 @@
 package org.lwjgl.awt;
 
-import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.Platform;
 import org.lwjgl.system.jawt.JAWT;
@@ -12,10 +11,26 @@ import java.awt.*;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
 
 /**
- * Platform-independent implementation<sup>&#8224;</sup>.
- * <p>
- * &#8224; The JAWT library is initialized with different versions
- * depending on the platform for some reason.
+ * Creates and manages the native AWT object with ease.
+ *
+ * <p>Example 1:
+ * <pre>{@code
+ * 	Component c = ...;
+ * 	try(AWT awt = new AWT(c)) {
+ * 	    long pPlatformInfo = awt.getPlatformInfo();
+ * 	    // ... do something with the platform info
+ *    }
+ * 	// The AWT object is automatically freed!
+ * }</pre>
+ *
+ * <p>Example 2:
+ * <pre>{@code
+ * 	Component c = ...;
+ * 	AWT awt = new AWT(c);
+ * 	long pPlatformInfo = awt.getPlatformInfo();
+ * 	// ... do something with the platform info
+ * 	awt.close();
+ * }</pre>
  *
  * @author SWinxy
  * @author Kai Burjack
@@ -23,13 +38,13 @@ import static org.lwjgl.system.jawt.JAWTFunctions.*;
 public class AWT implements AutoCloseable {
 
 	/**
-	 * JAWT object. Despite it being created from the stack,
-	 * it still lives on until after {@link #close()} is called.
+	 * Native JAWT object.
+	 * It must be freed explicitly via {@link #close()}.
 	 */
 	private final JAWT jawt;
 
 	/**
-	 * The drawing surface that is used.
+	 * The underlying drawing surface that is used.
 	 */
 	private final JAWTDrawingSurface drawingSurface;
 
@@ -55,56 +70,57 @@ public class AWT implements AutoCloseable {
 	 *                      </ul>
 	 */
 	public AWT(Component component) throws AWTException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
+		jawt = JAWT
+				.calloc() // MUST BE FREED
+				.version(JAWT_VERSION_1_7);
 
-			jawt = JAWT
-					.calloc(stack)
-					.version(JAWT_VERSION_1_7);
+		// Initialize JAWT
+		if (!JAWT_GetAWT(jawt)) {
+			throw new AWTException("Failed to initialize the native JAWT library.");
+		}
 
-			// Initialize JAWT
-			if (!JAWT_GetAWT(jawt)) {
-				throw new AWTException("Failed to initialize the native JAWT library.");
-			}
+		// Get the drawing surface from the canvas
+		drawingSurface = JAWT_GetDrawingSurface(component, jawt.GetDrawingSurface());
+		if (drawingSurface == null) {
+			throw new AWTException("Failed to get drawing surface.");
+		}
 
-			// Get the drawing surface from the canvas
-			drawingSurface = JAWT_GetDrawingSurface(component, jawt.GetDrawingSurface());
-			if (drawingSurface == null) {
-				throw new AWTException("Failed to get drawing surface.");
-			}
+		// Try to lock the surface for native rendering
+		int lock = JAWT_DrawingSurface_Lock(drawingSurface, drawingSurface.Lock());
+		if ((lock & JAWT_LOCK_ERROR) != 0) {
+			JAWT_FreeDrawingSurface(drawingSurface, jawt.FreeDrawingSurface());
+			throw new AWTException("Failed to lock the AWT drawing surface.");
+		}
 
-			// Try to lock the surface for native rendering
-			int lock = JAWT_DrawingSurface_Lock(drawingSurface, drawingSurface.Lock());
-			if ((lock & JAWT_LOCK_ERROR) != 0) {
-				JAWT_FreeDrawingSurface(drawingSurface, jawt.FreeDrawingSurface());
-				throw new AWTException("Failed to lock the AWT drawing surface.");
-			}
+		drawingSurfaceInfo = JAWT_DrawingSurface_GetDrawingSurfaceInfo(drawingSurface, drawingSurface.GetDrawingSurfaceInfo());
+		if (drawingSurfaceInfo == null) {
+			JAWT_DrawingSurface_Unlock(drawingSurface, drawingSurface.Unlock());
+			throw new AWTException("Failed to get AWT drawing surface information.");
+		}
 
-			drawingSurfaceInfo = JAWT_DrawingSurface_GetDrawingSurfaceInfo(drawingSurface, drawingSurface.GetDrawingSurfaceInfo());
-			if (drawingSurfaceInfo == null) {
-				JAWT_DrawingSurface_Unlock(drawingSurface, drawingSurface.Unlock());
-				throw new AWTException("Failed to get AWT drawing surface information.");
-			}
+		long address = drawingSurfaceInfo.platformInfo();
 
-			long address = drawingSurfaceInfo.platformInfo();
-
-			if (address == MemoryUtil.NULL) {
-				throw new AWTException("An unknown error occurred. Failed to retrieve platform-specific information.");
-			}
+		if (address == MemoryUtil.NULL) {
+			throw new AWTException("An unknown error occurred. Failed to retrieve platform-specific information.");
 		}
 	}
 
 	/**
 	 * Checks if the platform is supported using lwjgl3-awt.
-	 * This does not check for the minimum OS version.
+	 * The OS version is not checked, but the architecture (e.g. 32 or 64 bit) is.
+	 *
+	 * @return true if the platform is supported
 	 */
 	public static boolean isPlatformSupported() {
-		return Platform.get() == Platform.WINDOWS || Platform.get() == Platform.MACOSX || Platform.get() == Platform.LINUX;
+		return Platform.get() == Platform.WINDOWS ||
+				(Platform.get() == Platform.MACOSX && Platform.getArchitecture() == Platform.Architecture.X64) ||
+				Platform.get() == Platform.LINUX;
 	}
 
 	/**
 	 * Returns a pointer to a platform-specific struct with platform-specific information.
 	 * <p>
-	 * The pointer can be safely cast to a {@link org.lwjgl.system.jawt.JAWTWin32DrawingSurfaceInfo}
+	 * The pointer can be safely used as a {@link org.lwjgl.system.jawt.JAWTWin32DrawingSurfaceInfo}
 	 * or {@link org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo} struct, or--if on MacOS--
 	 * a pointer to an {@code NSObject}.
 	 * <p>
@@ -117,14 +133,17 @@ public class AWT implements AutoCloseable {
 		return drawingSurfaceInfo.platformInfo();
 	}
 
+	/**
+	 * Gets the underlying platform drawing surface struct.
+	 *
+	 * @return the drawing surface
+	 */
 	public JAWTDrawingSurfaceInfo getDrawingSurfaceInfo() {
 		return drawingSurfaceInfo;
 	}
 
 	/**
 	 * Frees memory and unlocks the drawing surface.
-	 * <p>
-	 * The JAWT object is implicitly freed(?).
 	 */
 	@Override
 	public void close() {
@@ -132,5 +151,7 @@ public class AWT implements AutoCloseable {
 		JAWT_DrawingSurface_FreeDrawingSurfaceInfo(drawingSurfaceInfo, drawingSurface.FreeDrawingSurfaceInfo());
 		JAWT_DrawingSurface_Unlock(drawingSurface, drawingSurface.Unlock());
 		JAWT_FreeDrawingSurface(drawingSurface, jawt.FreeDrawingSurface());
+
+		jawt.free();
 	}
 }

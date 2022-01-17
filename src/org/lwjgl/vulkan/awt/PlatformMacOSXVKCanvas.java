@@ -5,7 +5,6 @@ import org.lwjgl.awt.AWT;
 import org.lwjgl.awt.MacOSX;
 import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTRectangle;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkMetalSurfaceCreateInfoEXT;
@@ -57,10 +56,8 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
         try (AWT awt = new AWT(canvas)) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
 
-                JAWTDrawingSurfaceInfo drawingSurfaceInfo = awt.getDrawingSurfaceInfo();
-
                 // if the canvas is inside e.g. a JSplitPane, the dsi coordinates are wrong and need to be corrected
-                JAWTRectangle bounds = drawingSurfaceInfo.bounds();
+                JAWTRectangle bounds = awt.getDrawingSurfaceInfo().bounds();
                 int x = bounds.x();
                 int y = bounds.y();
 
@@ -73,7 +70,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
 
                 // Get pointer to CAMetalLayer object representing the renderable surface
                 // Using constructor because I don't know if it's backwards-compatible to be static
-                long metalLayer = new PlatformMacOSXVKCanvas().createMTKView(drawingSurfaceInfo.platformInfo(), x, y, bounds.width(), bounds.height());
+                long metalLayer = new PlatformMacOSXVKCanvas().createMTKView(awt.getPlatformInfo(), x, y, bounds.width(), bounds.height());
                 // MacOSX.createMTKView(canvas, drawingSurfaceInfo.platformInfo());
 
                 MacOSX.caFlush();
