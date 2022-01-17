@@ -5,6 +5,9 @@ import org.lwjgl.awthacks.NonClearGraphics2D;
 import org.lwjgl.system.Platform;
 
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.awt.event.ComponentListener;
 import java.util.concurrent.Callable;
 
 /**
@@ -33,6 +36,16 @@ public abstract class AWTGLCanvas extends Canvas {
     protected final GLData data;
     protected final GLData effective = new GLData();
     protected boolean initCalled;
+    private int framebufferWidth, framebufferHeight;
+    private final ComponentListener listener = new ComponentAdapter() {
+        @Override
+        public void componentResized(ComponentEvent e) {
+            java.awt.geom.AffineTransform t = AWTGLCanvas.this.getGraphicsConfiguration().getDefaultTransform();
+            float sx = (float) t.getScaleX(), sy = (float) t.getScaleY();
+            AWTGLCanvas.this.framebufferWidth = (int) (getWidth() * sx);
+            AWTGLCanvas.this.framebufferHeight = (int) (getHeight() * sy);
+        }
+    };
 
     @Override
     public void removeNotify() {
@@ -43,11 +56,17 @@ public abstract class AWTGLCanvas extends Canvas {
         disposeCanvas();
     }
 
+    @Override
+    public synchronized void addComponentListener(ComponentListener l) {
+        super.addComponentListener(l);
+    }
+
     public void disposeCanvas() {
         this.platformCanvas.dispose();
     }
     protected AWTGLCanvas(GLData data) {
         this.data = data;
+        this.addComponentListener(listener);
     }
 
     protected AWTGLCanvas() {
@@ -119,6 +138,14 @@ public abstract class AWTGLCanvas extends Canvas {
      * Will be called whenever the {@link Canvas} needs to paint itself.
      */
     public abstract void paintGL();
+
+    public int getFramebufferWidth() {
+        return framebufferWidth;
+    }
+
+    public int getFramebufferHeight() {
+        return framebufferHeight;
+    }
 
     public final void swapBuffers() {
         platformCanvas.swapBuffers();
