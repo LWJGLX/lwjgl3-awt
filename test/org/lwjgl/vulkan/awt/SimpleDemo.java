@@ -1,7 +1,6 @@
 package org.lwjgl.vulkan.awt;
 
 import org.lwjgl.PointerBuffer;
-import org.lwjgl.awt.AWT;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRSurface;
 import org.lwjgl.vulkan.VkApplicationInfo;
@@ -19,7 +18,7 @@ import static org.lwjgl.vulkan.awt.VKUtil.translateVulkanResult;
 
 /**
  * Shows how to create a simple Vulkan instance and a canvas using {@link AWTVK}.
- * 
+ *
  * @author Kai Burjack
  * @author SWinxy
  */
@@ -27,7 +26,7 @@ public class SimpleDemo {
 
 	/**
      * Create a Vulkan instance using LWJGL 3.
-     * 
+     *
      * @return the VkInstance handle
      */
     private static VkInstance createInstance() {
@@ -37,7 +36,7 @@ public class SimpleDemo {
                     .sType(VK_STRUCTURE_TYPE_APPLICATION_INFO)
                     .pApplicationName(stack.UTF8("AWT Vulkan Demo"))
                     .pEngineName(stack.UTF8(""))
-                    .apiVersion(VK_MAKE_VERSION(1, 0, 2));
+                    .apiVersion(VK_MAKE_VERSION(1, 1, 0));
 
             PointerBuffer ppEnabledExtensionNames = stack.pointers(stack.UTF8(VK_KHR_SURFACE_EXTENSION_NAME), stack.UTF8(AWTVK.getSurfaceExtensionName()));
 
@@ -60,9 +59,9 @@ public class SimpleDemo {
     }
 
     public static void main(String[] args) throws AWTException {
-        if (!AWT.isPlatformSupported()) {
-            throw new RuntimeException("Platform not supported.");
-        }
+//        if (!AWT.isPlatformSupported()) {
+//            throw new RuntimeException("Platform not supported.");
+//        }
 
         // Create the Vulkan instance
         VkInstance instance = createInstance();
