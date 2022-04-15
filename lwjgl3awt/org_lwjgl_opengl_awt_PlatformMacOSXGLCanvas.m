@@ -1,6 +1,6 @@
 
 #import <Cocoa/Cocoa.h>
-#include <JavaVM/jawt_md.h>
+#include <jawt_md.h>
 #include "org_lwjgl_opengl_awt_PlatformMacOSXGLCanvas.h"
 
 
