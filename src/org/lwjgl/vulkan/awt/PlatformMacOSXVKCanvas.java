@@ -5,7 +5,10 @@ import org.lwjgl.awt.AWT;
 import org.lwjgl.awt.MacOSX;
 import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.SharedLibrary;
 import org.lwjgl.system.jawt.JAWTRectangle;
+import org.lwjgl.system.macosx.MacOSXLibrary;
+import org.lwjgl.system.macosx.ObjCRuntime;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkMetalSurfaceCreateInfoEXT;
 import org.lwjgl.vulkan.VkPhysicalDevice;
@@ -14,6 +17,9 @@ import javax.swing.*;
 import java.awt.*;
 import java.nio.LongBuffer;
 
+import static org.lwjgl.system.JNI.invokeP;
+import static org.lwjgl.system.JNI.invokePPPPPPP;
+import static org.lwjgl.system.macosx.ObjCRuntime.objc_getClass;
 import static org.lwjgl.vulkan.EXTMetalSurface.*;
 import static org.lwjgl.vulkan.KHRSurface.VK_ERROR_NATIVE_WINDOW_IN_USE_KHR;
 import static org.lwjgl.vulkan.VK10.*;
@@ -44,6 +50,38 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
      */
     private native long createMTKView(long platformInfo, int x, int y, int width, int height);
 
+    private long createMTKViewNoNative(long platformInfo, int x, int y, int width, int height) {
+      long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
+      SharedLibrary lib = MacOSXLibrary.getWithIdentifier("com.apple.Metal");
+      SharedLibrary cg = MacOSXLibrary.create("/System/Library/Frameworks/CoreGraphics.framework");
+
+      long address = lib.getFunctionAddress("MTLCreateSystemDefaultDevice");
+      long CGRectMake = lib.getFunctionAddress("CGRectMake");
+      long device = invokeP(address);
+      System.out.println("Device address: " + device);
+
+      long CGRect = objc_getClass("CGRect");
+      System.out.println("Got CGRect " + Long.toHexString(CGRect) + " from " + cg );
+//      long CGRectMake = sel_getUid("CGRectMake");
+      System.out.println("CGRectMake is " + Long.toHexString(CGRectMake));
+      long frame = invokePPPPPPP(
+        CGRect,
+        CGRectMake,
+        x,
+        y,
+        width,
+        height,
+        objc_msgSend);
+
+        System.out.println("frame is " + Long.toHexString(frame));
+
+//      lib.getFunctionAddress()
+//      long NSThread = objc_getClass("NSThread");
+//      long currentThread = invokePPP(NSThread, sel_getUid("currentThread"), objc_msgSend);
+//      return invokePPP(glfwGetCocoaWindow(window), sel_getUid("contentView"), objc_msgSend);
+      return device;
+    }
+
     /**
      * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
      */
@@ -71,6 +109,11 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                 // Get pointer to CAMetalLayer object representing the renderable surface
                 // Using constructor because I don't know if it's backwards-compatible to be static
                 long metalLayer = new PlatformMacOSXVKCanvas().createMTKView(awt.getPlatformInfo(), x, y, bounds.width(), bounds.height());
+                System.out.println("metal layer: " + metalLayer);
+                System.out.println(x);
+              System.out.println(y);
+              System.out.println(bounds.width());
+              System.out.println(bounds.height());
                 // MacOSX.createMTKView(canvas, drawingSurfaceInfo.platformInfo());
 
                 MacOSX.caFlush();
@@ -85,6 +128,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
 
                 switch (result) {
                     case VK_SUCCESS:
+                      System.out.println("Got surface:"+Long.toHexString(pSurface.get(0)));
                         return pSurface.get(0);
 
                     // Possible VkResult codes returned
