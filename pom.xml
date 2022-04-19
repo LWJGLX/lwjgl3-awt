@@ -43,7 +43,7 @@
 		</developer>
 	</developers>
 	<properties>
-		<lwjgl.version>3.3.0</lwjgl.version>
+		<lwjgl.version>3.3.1</lwjgl.version>
 		<junit.version>5.8.2</junit.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -82,7 +82,7 @@
 				</os>
 			</activation>
 			<properties>
-				<platform>linux</platform>
+				<lwjgl.natives>natives-linux</lwjgl.natives>
 			</properties>
 		</profile>
 		<profile>
@@ -94,7 +94,7 @@
 				</os>
 			</activation>
 			<properties>
-				<platform>linux-arm64</platform>
+				<lwjgl.natives>natives-linux-arm64</lwjgl.natives>
 			</properties>
 		</profile>
 		<profile>
@@ -106,7 +106,7 @@
 				</os>
 			</activation>
 			<properties>
-				<platform>linux-arm32</platform>
+				<lwjgl.natives>natives-linux-arm32</lwjgl.natives>
 			</properties>
 		</profile>
 		<profile>
@@ -118,25 +118,25 @@
 				</os>
 			</activation>
 			<properties>
-				<platform>linux-arm32</platform>
+				<lwjgl.natives>natives-linux-arm32</lwjgl.natives>
 			</properties>
 		</profile>
 		<profile>
-			<id>lwjgl-natives-macos-amd64</id>
+			<id>lwjgl-natives-macos-x86_64</id>
 			<activation>
 				<os>
 					<family>mac</family>
-					<arch>amd64</arch>
+					<arch>x86_64</arch>
 				</os>
 			</activation>
 			<properties>
-				<lwjgl.natives>macos</lwjgl.natives>
+				<lwjgl.natives>natives-macos</lwjgl.natives>
 			</properties>
 			<dependencies>
 				<dependency>
 					<groupId>org.lwjgl</groupId>
 					<artifactId>lwjgl-vulkan</artifactId>
-					<classifier>macos</classifier>
+					<classifier>natives-macos</classifier>
 				</dependency>
 			</dependencies>
 		</profile>
@@ -149,7 +149,7 @@
 				</os>
 			</activation>
 			<properties>
-				<platform>macos-arm64</platform>
+				<lwjgl.natives>natives-macos-arm64</lwjgl.natives>
 			</properties>
 			<dependencies>
 				<dependency>
@@ -168,7 +168,7 @@
 				</os>
 			</activation>
 			<properties>
-				<platform>windows</platform>
+				<lwjgl.natives>natives-windows</lwjgl.natives>
 			</properties>
 		</profile>
 		<profile>
@@ -180,7 +180,7 @@
 				</os>
 			</activation>
 			<properties>
-				<platform>windows-x86</platform>
+				<lwjgl.natives>natives-windows-x86</lwjgl.natives>
 			</properties>
 		</profile>
 		<profile>
@@ -192,7 +192,7 @@
 				</os>
 			</activation>
 			<properties>
-				<platform>windows-arm64</platform>
+				<lwjgl.natives>natives-windows-arm64</lwjgl.natives>
 			</properties>
 		</profile>
 		<profile>
@@ -378,7 +378,9 @@
 			<snapshots>
 				<enabled>true</enabled>
 			</snapshots>
-			<releases><enabled>false</enabled></releases>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
 		</repository>
 	</repositories>
 
@@ -395,41 +397,38 @@
 	</dependencyManagement>
 
 	<dependencies>
+		<!-- LWJGL -->
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl</artifactId>
-			<version>${lwjgl.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.lwjgl</groupId>
-			<artifactId>lwjgl</artifactId>
-			<version>${lwjgl.version}</version>
-			<classifier>natives-${platform}</classifier>
-			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-jawt</artifactId>
-			<version>${lwjgl.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-opengl</artifactId>
-			<version>${lwjgl.version}</version>
 			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-opengl</artifactId>
-			<version>${lwjgl.version}</version>
-			<classifier>natives-${platform}</classifier>
-			<scope>test</scope>
+			<classifier>${lwjgl.natives}</classifier>
+			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-vulkan</artifactId>
 			<optional>true</optional>
 		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>${lwjgl.natives}</classifier>
+		</dependency>
+
+		<!-- TESTS -->
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter-api</artifactId>
@@ -442,7 +441,6 @@
 			<version>${junit.version}</version>
 			<scope>test</scope>
 		</dependency>
-
 		<dependency>
 			<groupId>com.github.romankh3</groupId>
 			<artifactId>image-comparison</artifactId>
