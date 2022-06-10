@@ -1,10 +1,15 @@
 package org.lwjgl.vulkan.awt;
 
+import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.awt.AWT;
 import org.lwjgl.awt.MacOSX;
-import org.lwjgl.system.*;
+import org.lwjgl.system.JNI;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.SharedLibrary;
 import org.lwjgl.system.jawt.JAWTRectangle;
+import org.lwjgl.system.libffi.FFICIF;
 import org.lwjgl.system.macosx.MacOSXLibrary;
 import org.lwjgl.system.macosx.ObjCRuntime;
 import org.lwjgl.vulkan.VkInstance;
@@ -14,9 +19,13 @@ import org.lwjgl.vulkan.VkPhysicalDevice;
 import javax.swing.*;
 import java.awt.*;
 import java.nio.ByteBuffer;
+import java.nio.DoubleBuffer;
 import java.nio.LongBuffer;
 
 import static org.lwjgl.system.JNI.invokeP;
+import static org.lwjgl.system.MemoryUtil.memAddress;
+import static org.lwjgl.system.Pointer.POINTER_SIZE;
+import static org.lwjgl.system.libffi.LibFFI.*;
 import static org.lwjgl.vulkan.EXTMetalSurface.*;
 import static org.lwjgl.vulkan.KHRSurface.VK_ERROR_NATIVE_WINDOW_IN_USE_KHR;
 import static org.lwjgl.vulkan.VK10.*;
@@ -30,10 +39,6 @@ import static org.lwjgl.vulkan.VK10.*;
 public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
 
     public static final String EXTENSION_NAME = VK_EXT_METAL_SURFACE_EXTENSION_NAME;
-
-    static {
-        Library.loadSystem("org.lwjgl.awt", "lwjgl3awt");
-    }
 
     /**
      * Creates the native Metal view.
@@ -69,14 +74,6 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
         double h = MemoryUtil.memGetDouble(H+3*8);
         System.out.println("Height is " + h);
 
-        // CGRect creation, layout is x/y/width/height, all as doubles on 64bit architectures
-        ByteBuffer frame = MemoryUtil.memCalloc(4*8);
-        frame.putDouble(x);
-        frame.putDouble(h-height-y);
-        frame.putDouble(width);
-        frame.putDouble(height);
-        frame.flip();
-
         // MTKView *view = [[MTKView alloc] initWithFrame:frame device:device];
         // get MTKView class and allocate instance
         long MTKView = ObjCRuntime.objc_getClass("MTKView");
@@ -84,28 +81,19 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
         long mtkView = JNI.invokePPP(MTKView,
                 ObjCRuntime.sel_getUid("alloc"),
                 objc_msgSend);
-        System.out.println("MTKView instance is " + Long.toHexString(mtkView) + ", using buffer " + Long.toHexString(MemoryUtil.memAddress(frame)));
+        System.out.println("MTKView instance is " + Long.toHexString(mtkView));
 
+        final double[] frame = new double[]{x, y, width, height};
         // init MTKView with frame and device
-        long view = JNI.invokePPPPP(mtkView,
-                ObjCRuntime.sel_getUid("initWithFrame:device:"),
-                MemoryUtil.memAddress(frame),
-                device,
-                objc_msgSend);
-        System.out.println("view is "+ Long.toHexString(view) + " with " + x + "/" + (h-height-y) + "/" + width + "/" + height);
+        long view = MTKView_initWithFrame(mtkView, frame, device);
 
-//      FFICIF cif = new FFICIF();
-//      PointerBuffer types = MemoryUtil.memAllocPointer(2);
-//      types.put(0, ffi_type_pointer)
-//      ffi_prep_cif(cif, FFI_DEFAULT_ABI, ret, types);
-//      ffi_call(cif, fn, rc, types);
+        System.out.println("view is "+ Long.toHexString(view) + " with " + x + "/" + (h-height-y) + "/" + width + "/" + height);
 
         // get layer from MTKView instance
         long mtkViewLayer = JNI.invokePPP(mtkView,
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
         System.out.println("Layer is " + Long.toHexString(mtkViewLayer));
-
 
         // set layer on JAWTSurfaceLayers object
         JNI.invokePPPV(platformInfo,
@@ -118,8 +106,84 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
         return mtkViewLayer;
     }
 
+    private static long MTKView_initWithFrame(long mtkView, double[] frame, long device) {
+        // Prepare the call interface
+        FFICIF cif = FFICIF.malloc();
 
-  /**
+        PointerBuffer argumentTypes = BufferUtils.createPointerBuffer(7) // 4 arguments, one of them an array of 4 doubles
+                .put(0, ffi_type_pointer) // MTKView*
+                .put(1, ffi_type_pointer) // initWithFrame:
+                .put(2, ffi_type_double) // CGRect
+                .put(3, ffi_type_double) // CGRect
+                .put(4, ffi_type_double) // CGRect
+                .put(5, ffi_type_double) // CGRect
+                .put(6, ffi_type_pointer); // device*
+
+        int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_pointer, argumentTypes);
+        if (status != FFI_OK) {
+            throw new IllegalStateException("ffi_prep_cif failed: " + status);
+        }
+
+        // An array of pointers that point to the actual argument values.
+        PointerBuffer arguments = BufferUtils.createPointerBuffer(7);
+
+        // Storage for the actual argument values.
+        ByteBuffer values = BufferUtils.createByteBuffer(
+                        POINTER_SIZE +  // MTKView*
+                        POINTER_SIZE +  // initWithFrame*
+                        4*8 +           // CGRect
+                        POINTER_SIZE    // device*
+        );
+
+        // The memory we'll modify using libffi
+        DoubleBuffer target = BufferUtils.createDoubleBuffer(4);
+        target.put(frame, 0, 4);
+
+        System.err.println("Setting up arguments");
+        // Setup the argument buffers
+        {
+            // MTKView*
+            arguments.put(memAddress(values));
+            PointerBuffer.put(values, mtkView);
+
+            // initWithFrame*
+            arguments.put(memAddress(values));
+            PointerBuffer.put(values, ObjCRuntime.sel_getUid("initWithFrame:"));
+
+            // frame
+            arguments.put(memAddress(values));
+            values.putDouble(frame[0]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[1]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[2]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[3]);
+
+            // device*
+            arguments.put(memAddress(values));
+            values.putLong(device);
+        }
+        arguments.flip();
+        values.flip();
+
+        // Invoke the function and validate
+        System.err.println("Running objc_msgSend");
+        ByteBuffer view = BufferUtils.createByteBuffer(8);
+        ffi_call(cif, ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend"), view, arguments);
+        cif.free();
+
+        final long v = view.asLongBuffer().get(0);
+        if(v == 0L) {
+            throw new IllegalStateException("[MTKView initWithFrame:device:] returned null.");
+        }
+
+        return view.asLongBuffer().get(0);
+    }
+
+
+
+    /**
      * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
      */
     @Deprecated
