@@ -3,17 +3,20 @@ package org.lwjgl.vulkan.awt;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.awt.AWT;
 import org.lwjgl.awt.MacOSX;
-import org.lwjgl.system.Library;
-import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.*;
 import org.lwjgl.system.jawt.JAWTRectangle;
+import org.lwjgl.system.macosx.MacOSXLibrary;
+import org.lwjgl.system.macosx.ObjCRuntime;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkMetalSurfaceCreateInfoEXT;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 
 import javax.swing.*;
 import java.awt.*;
+import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 
+import static org.lwjgl.system.JNI.invokeP;
 import static org.lwjgl.vulkan.EXTMetalSurface.*;
 import static org.lwjgl.vulkan.KHRSurface.VK_ERROR_NATIVE_WINDOW_IN_USE_KHR;
 import static org.lwjgl.vulkan.VK10.*;
@@ -42,9 +45,81 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
      * @param height       window height
      * @return pointer to a native window handle
      */
-    private native long createMTKView(long platformInfo, int x, int y, int width, int height);
 
-    /**
+    private long createMTKView(long platformInfo, int x, int y, int width, int height) {
+        SharedLibrary mtk = MacOSXLibrary.create("/System/Library/Frameworks/MetalKit.framework");
+        SharedLibrary lib = MacOSXLibrary.create("/System/Library/Frameworks/Metal.framework");
+        SharedLibrary cg = MacOSXLibrary.create("/System/Library/Frameworks/CoreGraphics.framework");
+        long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
+        System.out.println("metalkit is " + mtk);
+        mtk.getFunctionAddress("MTKView");
+
+        // id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+        long address = lib.getFunctionAddress("MTLCreateSystemDefaultDevice");
+        long device = invokeP(address);
+        System.out.println("Device address: " + Long.toHexString(device));
+
+        // get offset in window from JAWTSurfaceLayers
+        long H = JNI.invokePPPPP(platformInfo,
+                ObjCRuntime.sel_getUid("windowLayer"),
+                ObjCRuntime.sel_getUid("frame"),
+                ObjCRuntime.sel_getUid("size"),
+                objc_msgSend);
+        // height is the 4th member of the 4*64bit struct
+        double h = MemoryUtil.memGetDouble(H+3*8);
+        System.out.println("Height is " + h);
+
+        // CGRect creation, layout is x/y/width/height, all as doubles on 64bit architectures
+        ByteBuffer frame = MemoryUtil.memCalloc(4*8);
+        frame.putDouble(x);
+        frame.putDouble(h-height-y);
+        frame.putDouble(width);
+        frame.putDouble(height);
+        frame.flip();
+
+        // MTKView *view = [[MTKView alloc] initWithFrame:frame device:device];
+        // get MTKView class and allocate instance
+        long MTKView = ObjCRuntime.objc_getClass("MTKView");
+        System.out.println("MTKView is " + Long.toHexString(MTKView));
+        long mtkView = JNI.invokePPP(MTKView,
+                ObjCRuntime.sel_getUid("alloc"),
+                objc_msgSend);
+        System.out.println("MTKView instance is " + Long.toHexString(mtkView) + ", using buffer " + Long.toHexString(MemoryUtil.memAddress(frame)));
+
+        // init MTKView with frame and device
+        long view = JNI.invokePPPPP(mtkView,
+                ObjCRuntime.sel_getUid("initWithFrame:device:"),
+                MemoryUtil.memAddress(frame),
+                device,
+                objc_msgSend);
+        System.out.println("view is "+ Long.toHexString(view) + " with " + x + "/" + (h-height-y) + "/" + width + "/" + height);
+
+//      FFICIF cif = new FFICIF();
+//      PointerBuffer types = MemoryUtil.memAllocPointer(2);
+//      types.put(0, ffi_type_pointer)
+//      ffi_prep_cif(cif, FFI_DEFAULT_ABI, ret, types);
+//      ffi_call(cif, fn, rc, types);
+
+        // get layer from MTKView instance
+        long mtkViewLayer = JNI.invokePPP(mtkView,
+                ObjCRuntime.sel_getUid("layer"),
+                objc_msgSend);
+        System.out.println("Layer is " + Long.toHexString(mtkViewLayer));
+
+
+        // set layer on JAWTSurfaceLayers object
+        JNI.invokePPPV(platformInfo,
+                ObjCRuntime.sel_getUid("setLayer:"),
+                mtkViewLayer,
+                objc_msgSend);
+
+//         surfaceLayers.layer = view.layer;
+        // return view.layer
+        return mtkViewLayer;
+    }
+
+
+  /**
      * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
      */
     @Deprecated
