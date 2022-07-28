@@ -1,11 +1,14 @@
 package org.lwjgl.opengl.awt;
 
+import org.lwjgl.BufferUtils;
+import org.lwjgl.PointerBuffer;
 import org.lwjgl.awt.MacOSX;
-import org.lwjgl.system.Library;
+import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
+import org.lwjgl.system.libffi.FFICIF;
 import org.lwjgl.system.macosx.ObjCRuntime;
 
 import javax.swing.*;
@@ -13,11 +16,15 @@ import java.awt.*;
 import java.awt.event.HierarchyEvent;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.DoubleBuffer;
 
 import static org.lwjgl.opengl.CGL.*;
 import static org.lwjgl.opengl.GL11.glFlush;
 import static org.lwjgl.system.JNI.*;
+import static org.lwjgl.system.MemoryUtil.memAddress;
+import static org.lwjgl.system.Pointer.POINTER_SIZE;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
+import static org.lwjgl.system.libffi.LibFFI.*;
 import static org.lwjgl.system.macosx.ObjCRuntime.objc_getClass;
 import static org.lwjgl.system.macosx.ObjCRuntime.sel_getUid;
 
@@ -76,7 +83,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         awt.version(JAWT_VERSION_1_7);
         if (!JAWT_GetAWT(awt))
             throw new AssertionError("GetAWT failed");
-        Library.loadSystem("org.lwjgl.awt", "lwjgl3awt");
         objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
         NSOpenGLPixelFormat = objc_getClass("NSOpenGLPixelFormat");
     }
@@ -85,8 +91,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private long view;
     private int width;
     private int height;
-
-    private native long createView(long platformInfo, long pixelFormat, int x, int y, int width, int height);
 
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
@@ -195,8 +199,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
                     pixelFormat = invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"), MemoryUtil.memAddress(attribsArray), objc_msgSend);
 
-                    view = createView(dsi.platformInfo(), pixelFormat, dsi.bounds().x(), dsi.bounds().y(), width, height);
-                    // view = MacOSX.createOpenGLView(canvas, dsi, pixelFormat);
+                    view = createNSOpenGLView(dsi.platformInfo(), pixelFormat, dsi.bounds().x(), dsi.bounds().y(), width, height);
                     MacOSX.caFlush();
                     long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
                     return invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
@@ -209,6 +212,121 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         } finally {
             JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
         }
+    }
+
+    private long createNSOpenGLView(long platformInfo, long pixelFormat, int x, int y, int width, int height) {
+        long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
+
+        // get offset in window from JAWTSurfaceLayers
+        long H = JNI.invokePPPPP(platformInfo,
+                ObjCRuntime.sel_getUid("windowLayer"),
+                ObjCRuntime.sel_getUid("frame"),
+                ObjCRuntime.sel_getUid("size"),
+                objc_msgSend);
+        // height is the 4th member of the 4*64bit struct
+        double h = MemoryUtil.memGetDouble(H+3*8);
+
+        // MTKView *view = [[MTKView alloc] initWithFrame:frame device:device];
+        // get MTKView class and allocate instance
+        long NSOpenGLView = ObjCRuntime.objc_getClass("NSOpenGLView");
+        long nsOpenGLView = JNI.invokePPP(NSOpenGLView,
+                ObjCRuntime.sel_getUid("alloc"),
+                objc_msgSend);
+
+        final double[] frame = new double[]{x, y, width, height};
+        // init MTKView with frame and device
+        long view = NSOpenGLView_initWithFrame(nsOpenGLView, frame, pixelFormat);
+
+        JNI.invokePPV(nsOpenGLView,
+                ObjCRuntime.sel_getUid("setWantsLayer:"),
+                true,
+                objc_msgSend);
+
+        // get layer from NSOpenGLView instance
+        long openglViewLayer = JNI.invokePPJ(nsOpenGLView,
+                ObjCRuntime.sel_getUid("layer"),
+                objc_msgSend);
+
+        // set layer on JAWTSurfaceLayers object
+        JNI.callPPPV(platformInfo,
+                ObjCRuntime.sel_getUid("setLayer:"),
+                openglViewLayer,
+                objc_msgSend);
+
+        return view;
+    }
+
+    private static long NSOpenGLView_initWithFrame(long nsopenglView, double[] frame, long pixelFormat) {
+        // Prepare the call interface
+        FFICIF cif = FFICIF.malloc();
+
+        PointerBuffer argumentTypes = BufferUtils.createPointerBuffer(7) // 4 arguments, one of them an array of 4 doubles
+                .put(0, ffi_type_pointer) // NSOpenGLView*
+                .put(1, ffi_type_pointer) // initWithFrame:pixelFormat:
+                .put(2, ffi_type_double) // CGRect
+                .put(3, ffi_type_double) // CGRect
+                .put(4, ffi_type_double) // CGRect
+                .put(5, ffi_type_double) // CGRect
+                .put(6, ffi_type_pointer); // pixelFormat*
+
+        int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_pointer, argumentTypes);
+        if (status != FFI_OK) {
+            throw new IllegalStateException("ffi_prep_cif failed: " + status);
+        }
+
+        // An array of pointers that point to the actual argument values.
+        PointerBuffer arguments = BufferUtils.createPointerBuffer(7);
+
+        // Storage for the actual argument values.
+        ByteBuffer values = BufferUtils.createByteBuffer(
+                POINTER_SIZE +  // MTKView*
+                        POINTER_SIZE +  // initWithFrame*
+                        4*8 +           // CGRect
+                        POINTER_SIZE    // pixelFormat*
+        );
+
+        // The memory we'll modify using libffi
+        DoubleBuffer target = BufferUtils.createDoubleBuffer(4);
+        target.put(frame, 0, 4);
+
+        // Setup the argument buffers
+        {
+            // MTKView*
+            arguments.put(memAddress(values));
+            PointerBuffer.put(values, nsopenglView);
+
+            // initWithFrame*
+            arguments.put(memAddress(values));
+            PointerBuffer.put(values, ObjCRuntime.sel_getUid("initWithFrame:pixelFormat:"));
+
+            // frame
+            arguments.put(memAddress(values));
+            values.putDouble(frame[0]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[1]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[2]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[3]);
+
+            // pixelFormat*
+            arguments.put(memAddress(values));
+            values.putLong(pixelFormat);
+        }
+        arguments.flip();
+        values.flip();
+
+        // Invoke the function and validate
+        ByteBuffer view = BufferUtils.createByteBuffer(8);
+        ffi_call(cif, ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend"), view, arguments);
+        cif.free();
+
+        final long v = view.asLongBuffer().get(0);
+        if(v == 0L) {
+            throw new IllegalStateException("[NSOpenGLView initWithFrame:pixelFormat:] returned null.");
+        }
+
+        return v;
     }
 
     @Override

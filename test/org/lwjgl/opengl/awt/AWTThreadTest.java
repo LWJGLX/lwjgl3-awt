@@ -1,5 +1,7 @@
 package org.lwjgl.opengl.awt;
 
+import org.lwjgl.opengl.*;
+
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.util.concurrent.Semaphore;
@@ -12,7 +14,7 @@ import javax.swing.JFrame;
 
 public class AWTThreadTest {
     abstract static class AWTGLCanvasExplicitDispose extends AWTGLCanvas {
-        public AWTGLCanvasExplicitDispose(GLData data) {
+        protected AWTGLCanvasExplicitDispose(GLData data) {
             super(data);
         }
 
@@ -50,11 +52,13 @@ public class AWTThreadTest {
         frame.add(canvas = new AWTGLCanvasExplicitDispose(data) {
             private static final long serialVersionUID = 1L;
 
+            @Override
             public void initGL() {
                 System.out.println("OpenGL version: " + effective.majorVersion + "." + effective.minorVersion + " (Profile: " + effective.profile + ")");
                 createCapabilities();
                 glClearColor(0.3f, 0.4f, 0.5f, 1);
             }
+            @Override
             public void paintGL() {
                 int w = getFramebufferWidth();
                 int h = getFramebufferHeight();
@@ -79,11 +83,13 @@ public class AWTThreadTest {
         frame.transferFocus();
 
         Runnable renderLoop = new Runnable() {
+            @Override
             public void run() {
                 while (true) {
                     canvas.render();
                     try {
                         if (signalTerminate.tryAcquire(10, TimeUnit.MILLISECONDS)) {
+                            GL.setCapabilities(null);
                             canvas.doDisposeCanvas();
                             signalTerminated.release();
                             return;

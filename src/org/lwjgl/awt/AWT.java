@@ -113,7 +113,7 @@ public class AWT implements AutoCloseable {
 	 */
 	public static boolean isPlatformSupported() {
 		return Platform.get() == Platform.WINDOWS ||
-				(Platform.get() == Platform.MACOSX && Platform.getArchitecture() == Platform.Architecture.X64) ||
+				Platform.get() == Platform.MACOSX ||
 				Platform.get() == Platform.LINUX;
 	}
 
