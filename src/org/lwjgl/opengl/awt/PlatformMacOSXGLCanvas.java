@@ -225,22 +225,17 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 objc_msgSend);
         // height is the 4th member of the 4*64bit struct
         double h = MemoryUtil.memGetDouble(H+3*8);
-        System.out.println("Height is " + h);
 
         // MTKView *view = [[MTKView alloc] initWithFrame:frame device:device];
         // get MTKView class and allocate instance
         long NSOpenGLView = ObjCRuntime.objc_getClass("NSOpenGLView");
-        System.out.println("NSOpenGLView is " + Long.toHexString(NSOpenGLView));
         long nsOpenGLView = JNI.invokePPP(NSOpenGLView,
                 ObjCRuntime.sel_getUid("alloc"),
                 objc_msgSend);
-        System.out.println("NSOpenGLView instance is " + Long.toHexString(nsOpenGLView));
 
         final double[] frame = new double[]{x, y, width, height};
         // init MTKView with frame and device
         long view = NSOpenGLView_initWithFrame(nsOpenGLView, frame, pixelFormat);
-
-        System.out.println("view is "+ Long.toHexString(view) + " with " + x + "/" + (h-height-y) + "/" + width + "/" + height);
 
         JNI.invokePPV(nsOpenGLView,
                 ObjCRuntime.sel_getUid("setWantsLayer:"),
@@ -251,8 +246,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         long openglViewLayer = JNI.invokePPJ(nsOpenGLView,
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
-        System.out.println("Layer is " + Long.toHexString(openglViewLayer));
-
 
         // set layer on JAWTSurfaceLayers object
         JNI.callPPPV(platformInfo,
@@ -296,7 +289,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         DoubleBuffer target = BufferUtils.createDoubleBuffer(4);
         target.put(frame, 0, 4);
 
-        System.err.println("Setting up arguments");
         // Setup the argument buffers
         {
             // MTKView*
@@ -325,7 +317,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         values.flip();
 
         // Invoke the function and validate
-        System.err.println("Running objc_msgSend");
         ByteBuffer view = BufferUtils.createByteBuffer(8);
         ffi_call(cif, ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend"), view, arguments);
         cif.free();
