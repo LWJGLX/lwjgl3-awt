@@ -35,6 +35,9 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
 
     /**
      * Creates the native Metal view.
+     *
+     * Because {@link JNI} does not provide a method signature for {@code PPDDDDPP},
+     * we have to construct a call interface ourselves via {@link LibFFI}.
      * <p>
      * {@code
      * id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -52,23 +55,14 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
      */
     private long createMTKView(long platformInfo, int x, int y, int width, int height) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            SharedLibrary mtk = MacOSXLibrary.create("/System/Library/Frameworks/MetalKit.framework");
-            SharedLibrary lib = MacOSXLibrary.create("/System/Library/Frameworks/Metal.framework");
+            SharedLibrary metalKit = MacOSXLibrary.create("/System/Library/Frameworks/MetalKit.framework");
+            SharedLibrary metal = MacOSXLibrary.create("/System/Library/Frameworks/Metal.framework");
             long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
-            mtk.getFunctionAddress("MTKView"); // loads the MTKView class or something (required, somehow)
+            metalKit.getFunctionAddress("MTKView"); // loads the MTKView class or something (required, somehow)
 
             // id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-            long device = JNI.invokeP(lib.getFunctionAddress("MTLCreateSystemDefaultDevice"));
+            long device = JNI.invokeP(metal.getFunctionAddress("MTLCreateSystemDefaultDevice"));
 
-            // MTKView *view = [MTKView alloc];
-            long mtkView = JNI.invokePPP(
-                    ObjCRuntime.objc_getClass("MTKView"),
-                    ObjCRuntime.sel_getUid("alloc"),
-                    objc_msgSend);
-
-
-            // Prepare the call interface
-            FFICIF cif = FFICIF.malloc(stack);
 
             PointerBuffer argumentTypes = BufferUtils.createPointerBuffer(7) // 4 arguments, one of them an array of 4 doubles
                     .put(0, LibFFI.ffi_type_pointer) // MTKView*
@@ -79,6 +73,8 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                     .put(5, LibFFI.ffi_type_double) // CGRect
                     .put(6, LibFFI.ffi_type_pointer); // device*
 
+            // Prepare the call interface
+            FFICIF cif = FFICIF.malloc(stack);
             int status = LibFFI.ffi_prep_cif(cif, LibFFI.FFI_DEFAULT_ABI, LibFFI.ffi_type_pointer, argumentTypes);
             if (status != LibFFI.FFI_OK) {
                 throw new IllegalStateException("ffi_prep_cif failed: " + status);
@@ -91,34 +87,40 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
             ByteBuffer values = stack.malloc(
                             Pointer.POINTER_SIZE +     // MTKView*
                             Pointer.POINTER_SIZE +     // initWithFrame*
-                            4 * Double.BYTES +         // CGRect (4 doubles)
+                            Double.BYTES * 4 +         // CGRect (4 doubles)
                             Pointer.POINTER_SIZE       // device*
             );
 
-            // Setup the argument buffers
-            {
-                // MTKView*
-                arguments.put(MemoryUtil.memAddress(values));
-                PointerBuffer.put(values, mtkView);
+            // MTKView *view = [MTKView alloc];
+            long mtkView = JNI.invokePPP(
+                    ObjCRuntime.objc_getClass("MTKView"),
+                    ObjCRuntime.sel_getUid("alloc"),
+                    objc_msgSend);
 
-                // initWithFrame*
-                arguments.put(MemoryUtil.memAddress(values));
-                PointerBuffer.put(values, ObjCRuntime.sel_getUid("initWithFrame:"));
+            // Set up the argument buffers by inserting pointers
 
-                // frame
-                arguments.put(MemoryUtil.memAddress(values));
-                values.putDouble(x);
-                arguments.put(MemoryUtil.memAddress(values));
-                values.putDouble(y);
-                arguments.put(MemoryUtil.memAddress(values));
-                values.putDouble(width);
-                arguments.put(MemoryUtil.memAddress(values));
-                values.putDouble(height);
+            // MTKView*
+            arguments.put(MemoryUtil.memAddress(values));
+            PointerBuffer.put(values, mtkView);
 
-                // device*
-                arguments.put(MemoryUtil.memAddress(values));
-                values.putLong(device);
-            }
+            // initWithFrame*
+            arguments.put(MemoryUtil.memAddress(values));
+            PointerBuffer.put(values, ObjCRuntime.sel_getUid("initWithFrame:"));
+
+            // frame
+            arguments.put(MemoryUtil.memAddress(values));
+            values.putDouble(x);
+            arguments.put(MemoryUtil.memAddress(values));
+            values.putDouble(y);
+            arguments.put(MemoryUtil.memAddress(values));
+            values.putDouble(width);
+            arguments.put(MemoryUtil.memAddress(values));
+            values.putDouble(height);
+
+            // device*
+            arguments.put(MemoryUtil.memAddress(values));
+            values.putLong(device);
+
             arguments.flip();
             values.flip();
 
@@ -126,7 +128,6 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
             // Returns itself, we just need to know if it's NULL
             LongBuffer pMTKView = stack.mallocLong(1);
             LibFFI.ffi_call(cif, objc_msgSend, MemoryUtil.memByteBuffer(pMTKView), arguments);
-
             if (pMTKView.get(0) == MemoryUtil.NULL) {
                 throw new IllegalStateException("[MTKView initWithFrame:device:] returned null.");
             }
