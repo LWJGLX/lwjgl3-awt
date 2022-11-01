@@ -90,7 +90,7 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
     @Override
     @Deprecated
     public boolean getPhysicalDevicePresentationSupport(VkPhysicalDevice physicalDevice, int queueFamilyIndex) {
-        return vkGetPhysicalDeviceWin32PresentationSupportKHR(physicalDevice, queueFamilyIndex);
+        return checkSupport(physicalDevice, queueFamilyIndex);
     }
 
     static boolean checkSupport(VkPhysicalDevice physicalDevice, int queueFamilyIndex) {
