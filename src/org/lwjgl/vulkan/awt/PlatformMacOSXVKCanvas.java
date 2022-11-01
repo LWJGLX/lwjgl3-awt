@@ -35,7 +35,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
 
     /**
      * Creates the native Metal view.
-     *
+     * <p>
      * Because {@link JNI} does not provide a method signature for {@code PPDDDDPP},
      * we have to construct a call interface ourselves via {@link LibFFI}.
      * <p>
@@ -53,7 +53,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
      * @param height       window height
      * @return pointer to a native window handle
      */
-    private long createMTKView(long platformInfo, int x, int y, int width, int height) {
+    private static long createMTKView(long platformInfo, int x, int y, int width, int height) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             SharedLibrary metalKit = MacOSXLibrary.create("/System/Library/Frameworks/MetalKit.framework");
             SharedLibrary metal = MacOSXLibrary.create("/System/Library/Frameworks/Metal.framework");
@@ -176,8 +176,7 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
                 }
 
                 // Get pointer to CAMetalLayer object representing the renderable surface
-                // Using constructor because I don't know if it's backwards-compatible to be static
-                long metalLayer = new PlatformMacOSXVKCanvas().createMTKView(awt.getPlatformInfo(), x, y, bounds.width(), bounds.height());
+                long metalLayer = createMTKView(awt.getPlatformInfo(), x, y, bounds.width(), bounds.height());
 
                 MacOSX.caFlush();
 
