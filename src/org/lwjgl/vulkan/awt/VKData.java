@@ -6,7 +6,8 @@ import java.awt.*;
 
 /**
  * Contains necessary data to create an {@link AWTVKCanvas}.
- * 
+ *
+ * @deprecated Please use the {@link AWTVK} API.
  * @author Kai Burjack
  */
 @Deprecated
