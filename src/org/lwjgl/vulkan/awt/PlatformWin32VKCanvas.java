@@ -26,6 +26,14 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
     public static final String EXTENSION_NAME = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
 
     /**
+     * @deprecated Please migrate to the {@link AWTVK} API.
+     */
+    @Deprecated
+    public PlatformWin32VKCanvas() {
+
+    }
+
+    /**
      * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
      */
     @Deprecated

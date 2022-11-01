@@ -24,6 +24,14 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
     public static final String EXTENSION_NAME = VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
 
     /**
+     * @deprecated Please migrate to the {@link AWTVK} API.
+     */
+    @Deprecated
+    public PlatformX11VKCanvas() {
+
+    }
+
+    /**
      * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
      */
     @Override

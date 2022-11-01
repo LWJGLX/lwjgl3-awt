@@ -34,6 +34,14 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
     public static final String EXTENSION_NAME = VK_EXT_METAL_SURFACE_EXTENSION_NAME;
 
     /**
+     * @deprecated Please migrate to the {@link AWTVK} API.
+     */
+    @Deprecated
+    public PlatformMacOSXVKCanvas() {
+
+    }
+
+    /**
      * Creates the native Metal view.
      * <p>
      * Because {@link JNI} does not provide a method signature for {@code PPDDDDPP},
