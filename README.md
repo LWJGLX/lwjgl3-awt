@@ -16,7 +16,7 @@ Support for OpenGL:
 - delay before swap - Nvidia only
 
 Support for Vulkan:
-- Vulkan 1.0, 1.1, 1.2
+- Vulkan 1.0, 1.1, 1.2, 1.3
 - MoltenVK support
 
 _Note about compatibility_:
@@ -78,9 +78,4 @@ frame.addWindowListener(new WindowAdapter() {
         // Destroy the surface to prevent leaks and errors
         KHRSurface.vkDestroySurfaceKHR(instance, surface, null);
 }});
-```
-
-## How to rebuild the MacOS native library
-```
-gcc -dynamiclib lwjgl3awt/*.m -o native/macosx/liblwjgl3awt.dylib -framework CoreFoundation -framework AppKit -framework MetalKit -framework Metal 
 ```
