@@ -40,8 +40,12 @@ public abstract class AWTGLCanvas extends Canvas {
     private final ComponentListener listener = new ComponentAdapter() {
         @Override
         public void componentResized(ComponentEvent e) {
-            java.awt.geom.AffineTransform t = AWTGLCanvas.this.getGraphicsConfiguration().getDefaultTransform();
-            float sx = (float) t.getScaleX(), sy = (float) t.getScaleY();
+	    float sx = 1, sy = 1;
+	    GraphicsConfiguration gconf = AWTGLCanvas.this.getGraphicsConfiguration();
+	    if(gconf != null) {
+		java.awt.geom.AffineTransform t = gconf.getDefaultTransform();
+		sx = (float) t.getScaleX(); sy = (float) t.getScaleY();
+	    }
             AWTGLCanvas.this.framebufferWidth = (int) (getWidth() * sx);
             AWTGLCanvas.this.framebufferHeight = (int) (getHeight() * sy);
         }
