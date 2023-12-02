@@ -4,6 +4,7 @@ import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.system.MemoryUtil.*;
 import static org.lwjgl.opengl.GLX.*;
 import static org.lwjgl.opengl.GLX13.*;
+import static org.lwjgl.opengl.GLXEXTSwapControl.*;
 import static org.lwjgl.opengl.GLXARBCreateContext.*;
 import static org.lwjgl.opengl.GLXARBCreateContextProfile.*;
 import static org.lwjgl.opengl.GLXARBCreateContextRobustness.*;
@@ -14,7 +15,8 @@ import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.IntBuffer;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Objects;
 
 import org.lwjgl.BufferUtils;
@@ -49,9 +51,14 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	public long display;
 	public long drawable;
 	public JAWTDrawingSurface ds;
+	public Collection<String> extensions;
+	public boolean has_GLX_EXT_swap_control, has_GLX_EXT_swap_control_tear;
 
 	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
 		int screen = X11.XDefaultScreen(display);
+		extensions = new HashSet<String>(Arrays.asList(glXQueryExtensionsString(display, screen).split(" ")));
+		has_GLX_EXT_swap_control = extensions.contains("GLX_EXT_swap_control");
+		has_GLX_EXT_swap_control_tear = extensions.contains("GLX_EXT_swap_control_tear");
 		IntBuffer attrib_list = BufferUtils.createIntBuffer(16 * 2);
 		attrib_list.put(GLX_DRAWABLE_TYPE).put(GLX_WINDOW_BIT);
 		attrib_list.put(GLX_RENDER_TYPE).put(GLX_RGBA_BIT);
@@ -149,6 +156,14 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		return true;
 	}
 
+	public void setSwapInterval(int interval) {
+		if(has_GLX_EXT_swap_control) {
+			if(interval < 0 && !has_GLX_EXT_swap_control_tear)
+				interval = -interval;
+			glXSwapIntervalEXT(display, drawable, interval);
+		}
+	}
+
 	public boolean delayBeforeSwapNV(float seconds) {
 		throw new UnsupportedOperationException("NYI");
 	}
@@ -160,8 +175,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		}
 	}
 
-	private static void verifyGLXCapabilities(long display, int screen, GLData data) throws AWTException {
-		List<String> extensions = Arrays.asList(glXQueryExtensionsString(display, screen).split(" "));
+	private void verifyGLXCapabilities(long display, int screen, GLData data) throws AWTException {
 		if (!extensions.contains("GLX_ARB_create_context")) {
 			throw new AWTException("GLX_ARB_create_context is unavailable");
 		}

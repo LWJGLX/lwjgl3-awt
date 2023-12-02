@@ -56,6 +56,8 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     }
 
     public long hwnd;
+    public long wglSwapIntervalEXTAddr = 0L;
+    public boolean has_WGL_EXT_swap_control_tear = false;
     public long wglDelayBeforeSwapNVAddr = 0L;
     public boolean wglDelayBeforeSwapNVAddr_set = false;
     public JAWTDrawingSurface ds;
@@ -158,7 +160,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         }
     }
 
-    private static long create(MemoryStack stack, long windowHandle, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
+    private long create(MemoryStack stack, long windowHandle, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
         long bufferAddr = stack.nmalloc(4, (4*2) << 2);
 
         // Validate context attributes
@@ -252,6 +254,11 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             throw new AWTException("Could not release dummy DC");
         }
 
+	if (wglExtensionsList.contains("WGL_EXT_swap_control")) {
+	    this.wglSwapIntervalEXTAddr = wglGetProcAddress("wglSwapIntervalEXT");
+	    this.has_WGL_EXT_swap_control_tear = wglExtensionsList.contains("WGL_EXT_swap_control_tear");
+	}
+
         // For some constellations of context attributes, we can stop right here.
         if (!atLeast30(attribs.majorVersion, attribs.minorVersion) && attribs.samples == 0 && !attribs.sRGB && !attribs.pixelFormatFloat
                 && attribs.contextReleaseBehavior == null && !attribs.robustness && attribs.api != API.GLES) {
@@ -267,8 +274,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             long context = wglCreateContext(hDC);
 
             if (attribs.swapInterval != null) {
-                boolean has_WGL_EXT_swap_control = wglExtensionsList.contains("WGL_EXT_swap_control");
-                if (!has_WGL_EXT_swap_control) {
+                if (wglSwapIntervalEXTAddr == 0) {
                     ReleaseDC(windowHandle, hDC);
                     wglMakeCurrent(currentDc, currentContext);
                     wglDeleteContext(context);
@@ -276,7 +282,6 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 }
                 if (attribs.swapInterval < 0) {
                     // Only allowed if WGL_EXT_swap_control_tear is available
-                    boolean has_WGL_EXT_swap_control_tear = wglExtensionsList.contains("WGL_EXT_swap_control_tear");
                     if (!has_WGL_EXT_swap_control_tear) {
                         ReleaseDC(windowHandle, hDC);
                         wglMakeCurrent(currentDc, currentContext);
@@ -292,10 +297,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                     wglDeleteContext(context);
                     throw new AWTException("Could not make GL context current");
                 }
-                long wglSwapIntervalEXTAddr = wglGetProcAddress("wglSwapIntervalEXT");
-                if (wglSwapIntervalEXTAddr != 0L) {
-                    callI(attribs.swapInterval, wglSwapIntervalEXTAddr);
-                }
+		callI(attribs.swapInterval, wglSwapIntervalEXTAddr);
             }
 
             if (attribs.swapGroupNV > 0 || attribs.swapBarrierNV > 0) {
@@ -611,8 +613,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         // Make context current for next operations
         wglMakeCurrent(hDC, newCtx);
         if (attribs.swapInterval != null) {
-            boolean has_WGL_EXT_swap_control = wglExtensionsList.contains("WGL_EXT_swap_control");
-            if (!has_WGL_EXT_swap_control) {
+            if (wglSwapIntervalEXTAddr == 0) {
                 ReleaseDC(windowHandle, hDC);
                 wglMakeCurrent(currentDc, currentContext);
                 wglDeleteContext(newCtx);
@@ -620,7 +621,6 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             }
             if (attribs.swapInterval < 0) {
                 // Only allowed if WGL_EXT_swap_control_tear is available
-                boolean has_WGL_EXT_swap_control_tear = wglExtensionsList.contains("WGL_EXT_swap_control_tear");
                 if (!has_WGL_EXT_swap_control_tear) {
                     ReleaseDC(windowHandle, hDC);
                     wglMakeCurrent(currentDc, currentContext);
@@ -628,10 +628,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                     throw new AWTException("Negative swap interval requested but WGL_EXT_swap_control_tear is unavailable");
                 }
             }
-            long wglSwapIntervalEXTAddr = wglGetProcAddress("wglSwapIntervalEXT");
-            if (wglSwapIntervalEXTAddr != 0L) {
-                callI(attribs.swapInterval, wglSwapIntervalEXTAddr);
-            }
+	    callI(attribs.swapInterval, wglSwapIntervalEXTAddr);
         }
         if (attribs.swapGroupNV > 0 || attribs.swapBarrierNV > 0) {
             // Only allowed if WGL_NV_swap_group is available
@@ -768,6 +765,15 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         boolean ret = SwapBuffers(hdc);
         ReleaseDC(hwnd, hdc);
         return ret;
+    }
+
+    @Override
+    public void setSwapInterval(int interval) {
+	if (wglSwapIntervalEXTAddr != 0) {
+	    if (interval < 0 && !has_WGL_EXT_swap_control_tear)
+		interval = -interval;
+	    callI(interval, wglSwapIntervalEXTAddr);
+	}
     }
 
     @Override
