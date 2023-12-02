@@ -32,9 +32,9 @@ public abstract class AWTGLCanvas extends Canvas {
         }
     }
 
-    protected long context;
+    protected ContextData context;
     protected final GLData data;
-    protected final GLData effective = new GLData();
+    protected GLData effective = new GLData();
     protected boolean initCalled;
     private int framebufferWidth, framebufferHeight;
     private final ComponentListener listener = new ComponentAdapter() {
@@ -51,7 +51,7 @@ public abstract class AWTGLCanvas extends Canvas {
     public void removeNotify() {
         super.removeNotify();
         // prepare for a possible re-adding
-        context = 0;
+        context = null;
         initCalled = false;
         disposeCanvas();
     }
@@ -73,10 +73,19 @@ public abstract class AWTGLCanvas extends Canvas {
         this(new GLData());
     }
 
+    protected ContextData createContext(GLData data) throws AWTException {
+	return platformCanvas.create(this, data);
+    }
+
+    protected ContextData createContext() throws AWTException {
+	return(createContext(data));
+    }
+
     protected void beforeRender() {
-        if (context == 0L) {
+        if (context == null) {
             try {
-                context = platformCanvas.create(this, data, effective);
+                context = createContext();
+		effective = context.caps;
             } catch (AWTException e) {
                 throw new RuntimeException("Exception while creating the OpenGL context", e);
             }
@@ -86,7 +95,7 @@ public abstract class AWTGLCanvas extends Canvas {
         } catch (AWTException e) {
             throw new RuntimeException("Failed to lock Canvas", e);
         }
-        platformCanvas.makeCurrent(context);
+        platformCanvas.makeCurrent(context.ctx);
     }
 
     protected void afterRender() {

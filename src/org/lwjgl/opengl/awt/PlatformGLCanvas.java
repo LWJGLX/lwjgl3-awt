@@ -9,8 +9,8 @@ import java.awt.Canvas;
  * @author Kai Burjack
  */
 public interface PlatformGLCanvas {
-    long create(Canvas canvas, GLData data, GLData effective) throws AWTException;
-    boolean deleteContext(long context);
+    ContextData create(Canvas canvas, GLData data) throws AWTException;
+    boolean deleteContext(ContextData context);
     boolean makeCurrent(long context);
     boolean isCurrent(long context);
     boolean swapBuffers();

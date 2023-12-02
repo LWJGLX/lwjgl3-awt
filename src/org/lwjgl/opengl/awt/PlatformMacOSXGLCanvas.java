@@ -93,7 +93,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private int height;
 
     @Override
-    public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
+    public ContextData create(Canvas canvas, GLData attribs) throws AWTException {
         this.ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         canvas.addHierarchyListener(e -> {
             // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
@@ -202,7 +202,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     view = createNSOpenGLView(dsi.platformInfo(), pixelFormat, dsi.bounds().x(), dsi.bounds().y(), width, height);
                     MacOSX.caFlush();
                     long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
-                    return invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
+                    return new ContextData(invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend), new GLData());
                 } finally {
                     JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
                 }
@@ -336,7 +336,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     }
 
     @Override
-    public boolean deleteContext(long context) {
+    public boolean deleteContext(ContextData context) {
         // frees created NSOpenGLView
         invokePPP(view, sel_getUid("removeFromSuperviewWithoutNeedingDisplay"), objc_msgSend);
         invokePPP(view, sel_getUid("clearGLContext"), objc_msgSend);
