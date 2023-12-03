@@ -37,6 +37,7 @@ import static org.lwjgl.system.JNI.*;
 import static org.lwjgl.system.MemoryStack.*;
 import static org.lwjgl.system.MemoryUtil.*;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
+import static org.lwjgl.system.windows.WinBase.*;
 import static org.lwjgl.system.windows.GDI32.*;
 import static org.lwjgl.system.windows.User32.*;
 import static org.lwjgl.system.windows.WindowsLibrary.*;
@@ -120,7 +121,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
         short classAtom = RegisterClassEx(in);
         if (classAtom == 0) {
-            throw new IllegalStateException("Failed to register WGL window class");
+            throw new IllegalStateException("Failed to register WGL window class: " + GetLastError());
         }
 
         return nCreateWindowEx(WS_EX_APPWINDOW, classAtom & 0xFFFF, NULL, 0, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL,HINSTANCE, NULL);
