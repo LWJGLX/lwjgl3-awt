@@ -108,23 +108,32 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         ib.put(0);
     }
 
+    private static short dummyWindowClass = 0;
+    private static short dummyWindowClass() {
+	if (dummyWindowClass == 0) {
+	    try (MemoryStack stack = stackPush()) {
+		WNDCLASSEX in = WNDCLASSEX.callocStack(stack)
+		    .cbSize(WNDCLASSEX.SIZEOF)
+		    .hInstance(HINSTANCE)
+		    .lpszClassName(stack.UTF16("AWTAPPWNDCLASS"));
+
+		memPutAddress(
+			      in.address() + WNDCLASSEX.LPFNWNDPROC,
+			      User32.Functions.DefWindowProc
+			      );
+
+		short classAtom = RegisterClassEx(in);
+		if (classAtom == 0) {
+		    throw new IllegalStateException("Failed to register WGL window class: " + GetLastError());
+		}
+		dummyWindowClass = classAtom;
+	    }
+	}
+	return dummyWindowClass;
+    }
+
     private static long createDummyWindow(MemoryStack stack) {
-        WNDCLASSEX in = WNDCLASSEX.callocStack(stack)
-            .cbSize(WNDCLASSEX.SIZEOF)
-            .hInstance(HINSTANCE)
-            .lpszClassName(stack.UTF16("AWTAPPWNDCLASS"));
-
-        memPutAddress(
-            in.address() + WNDCLASSEX.LPFNWNDPROC,
-            User32.Functions.DefWindowProc
-        );
-
-        short classAtom = RegisterClassEx(in);
-        if (classAtom == 0) {
-            throw new IllegalStateException("Failed to register WGL window class: " + GetLastError());
-        }
-
-        return nCreateWindowEx(WS_EX_APPWINDOW, classAtom & 0xFFFF, NULL, 0, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL,HINSTANCE, NULL);
+        return nCreateWindowEx(WS_EX_APPWINDOW, dummyWindowClass() & 0xFFFF, NULL, 0, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL,HINSTANCE, NULL);
     }
 
     @Override
