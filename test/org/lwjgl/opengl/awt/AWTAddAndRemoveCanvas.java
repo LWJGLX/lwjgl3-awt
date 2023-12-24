@@ -142,12 +142,6 @@ public class AWTAddAndRemoveCanvas {
         mainPanel.add(controlPanel, BorderLayout.LINE_START);
         
         frame.getContentPane().add(mainPanel, BorderLayout.CENTER);
-        frame.addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                canvas.disposeCanvas();
-            }
-        });
         frame.pack();
         
         /* Create and display the form */
