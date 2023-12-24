@@ -138,18 +138,22 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
                         throw new IllegalStateException("JAWT_DrawingSurface_GetDrawingSurfaceInfo() failed");
                 }
             
-                // Get the platform-specific drawing info
-		JAWTX11DrawingSurfaceInfo dsi_x11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
-                
-                long drawable = dsi_x11.drawable();
-		if (drawable == NULL) {
-			return false;
-		}
-                
-		if (context == NULL) {
-			return glXMakeCurrent(dsi_x11.display(), 0L, 0L);
+                try {
+                        // Get the platform-specific drawing info
+                        JAWTX11DrawingSurfaceInfo dsi_x11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
+
+                        long drawable = dsi_x11.drawable();
+                        if (drawable == NULL) {
+                                return false;
+                        }
+
+                        if (context == NULL) {
+                                return glXMakeCurrent(dsi_x11.display(), NULL, NULL);
+                        }
+                        return glXMakeCurrent(dsi_x11.display(), drawable, context);
+                } finally {
+                        JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
                 }
-		return glXMakeCurrent(dsi_x11.display(), drawable, context);
 	}
 
 	public boolean isCurrent(long context) {
@@ -163,12 +167,16 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
                         throw new IllegalStateException("JAWT_DrawingSurface_GetDrawingSurfaceInfo() failed");
                 }
             
-                // Get the platform-specific drawing info
-		JAWTX11DrawingSurfaceInfo dsi_x11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
-                
-                // Swap-Buffers
-		glXSwapBuffers(dsi_x11.display(), dsi_x11.drawable());
-		return true;
+                try {
+                        // Get the platform-specific drawing info
+                        JAWTX11DrawingSurfaceInfo dsi_x11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
+
+                        // Swap-Buffers
+                        glXSwapBuffers(dsi_x11.display(), dsi_x11.drawable());
+                        return true;
+                } finally {
+                        JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
+                }
 	}
 
 	public boolean delayBeforeSwapNV(float seconds) {
