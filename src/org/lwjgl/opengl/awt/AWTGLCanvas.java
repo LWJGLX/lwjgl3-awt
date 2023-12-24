@@ -47,6 +47,14 @@ public abstract class AWTGLCanvas extends Canvas {
         }
     };
     
+    @Override
+    public void removeNotify() {
+        super.removeNotify();
+        if (Platform.get() == Platform.MACOSX) {
+            removeGlNotify();
+        }
+    }
+    
     public void removeGlNotify() {
         // prepare for a possible re-adding
         context = 0;
