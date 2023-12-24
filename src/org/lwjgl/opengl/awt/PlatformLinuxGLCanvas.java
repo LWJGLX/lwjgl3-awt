@@ -46,11 +46,10 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AssertionError("GetAWT failed");
 	}
 
-	public long display;
-	public long drawable;
 	public JAWTDrawingSurface ds;
 
-	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
+	private long create(JAWTX11DrawingSurfaceInfo dsi_x11, GLData attribs, GLData effective) throws AWTException {
+                long display  = dsi_x11.display();
 		int screen = X11.XDefaultScreen(display);
 		IntBuffer attrib_list = BufferUtils.createIntBuffer(16 * 2);
 		attrib_list.put(GLX_DRAWABLE_TYPE).put(GLX_WINDOW_BIT);
@@ -81,7 +80,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		}
 		
 		long context = glXCreateContextAttribsARB(display, fbConfigs.get(0), share_context, true, gl_attrib_list);
-		if (context == 0) {
+		if (context == NULL) {
 			throw new AWTException("Unable to create GLX context");
 		}
 
@@ -91,7 +90,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AWTException("Unable to make context current");
 		}
 		populateEffectiveGLAttribs(effective);
-		makeCurrent(0 /* no context */);
+		makeCurrent(NULL /* no context */);
 
 		return context;
 	}
@@ -115,10 +114,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 				JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
 				try {
 					JAWTX11DrawingSurfaceInfo dsiWin = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
-					int depth = dsiWin.depth();
-					this.display = dsiWin.display();
-					this.drawable = dsiWin.drawable();
-					return create(depth, attribs, effective);
+					return create(dsiWin, attribs, effective);
 				} finally {
 					JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
 				}
@@ -130,14 +126,30 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		}
 	}
 
+        @Override
 	public boolean deleteContext(long context) {
 		return false;
 	}
 
 	public boolean makeCurrent(long context) {
-		if (context == 0L)
-			return glXMakeCurrent(display, 0L, 0L);
-		return glXMakeCurrent(display, drawable, context);
+                // Get the drawing surface info
+                JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+                if (dsi == null) {
+                        throw new IllegalStateException("JAWT_DrawingSurface_GetDrawingSurfaceInfo() failed");
+                }
+            
+                // Get the platform-specific drawing info
+		JAWTX11DrawingSurfaceInfo dsi_x11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
+                
+                long drawable = dsi_x11.drawable();
+		if (drawable == NULL) {
+			return false;
+		}
+                
+		if (context == NULL) {
+			return glXMakeCurrent(dsi_x11.display(), 0L, 0L);
+                }
+		return glXMakeCurrent(dsi_x11.display(), drawable, context);
 	}
 
 	public boolean isCurrent(long context) {
@@ -145,7 +157,17 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public boolean swapBuffers() {
-		glXSwapBuffers(display, drawable);
+                // Get the drawing surface info
+                JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+                if (dsi == null) {
+                        throw new IllegalStateException("JAWT_DrawingSurface_GetDrawingSurfaceInfo() failed");
+                }
+            
+                // Get the platform-specific drawing info
+		JAWTX11DrawingSurfaceInfo dsi_x11 = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
+                
+                // Swap-Buffers
+		glXSwapBuffers(dsi_x11.display(), dsi_x11.drawable());
 		return true;
 	}
 
