@@ -63,10 +63,14 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
      */
     private static long createMTKView(long platformInfo, int x, int y, int width, int height) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            SharedLibrary metalKit = MacOSXLibrary.create("/System/Library/Frameworks/MetalKit.framework");
+            // Load the MetalKit bundle. getFunctionAddress forces it:
+            // https://developer.apple.com/documentation/corefoundation/1537143-cfbundlegetfunctionpointerfornam?language=objc
+			MacOSXLibrary
+                    .create("/System/Library/Frameworks/MetalKit.framework")
+                    .getFunctionAddress("");
+
             SharedLibrary metal = MacOSXLibrary.create("/System/Library/Frameworks/Metal.framework");
             long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
-            metalKit.getFunctionAddress("MTKView"); // loads the MTKView class or something (required, somehow)
 
             // id<MTLDevice> device = MTLCreateSystemDefaultDevice();
             long device = JNI.invokeP(metal.getFunctionAddress("MTLCreateSystemDefaultDevice"));
