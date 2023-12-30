@@ -1,45 +1,59 @@
 package org.lwjgl.opengl.awt;
 
-import org.lwjgl.*;
-import org.lwjgl.opengl.*;
-import org.lwjgl.opengl.awt.GLData.*;
-import org.lwjgl.system.*;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.awt.GLData.API;
+import org.lwjgl.opengl.awt.GLData.Profile;
+import org.lwjgl.opengl.awt.GLData.ReleaseBehavior;
+import org.lwjgl.system.Checks;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
-import org.lwjgl.system.jawt.*;
-import org.lwjgl.system.windows.*;
+import org.lwjgl.system.jawt.JAWTDrawingSurface;
+import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
+import org.lwjgl.system.jawt.JAWTWin32DrawingSurfaceInfo;
+import org.lwjgl.system.windows.PIXELFORMATDESCRIPTOR;
+import org.lwjgl.system.windows.User32;
+import org.lwjgl.system.windows.WNDCLASSEX;
 
-import java.awt.*;
-import java.nio.*;
-import java.util.*;
+import java.awt.AWTException;
+import java.awt.Canvas;
+import java.nio.IntBuffer;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
-import static org.lwjgl.opengl.ARBMultisample.*;
-import static org.lwjgl.opengl.ARBRobustness.*;
-import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.ARBMultisample.GL_SAMPLES_ARB;
+import static org.lwjgl.opengl.ARBMultisample.GL_SAMPLE_BUFFERS_ARB;
+import static org.lwjgl.opengl.ARBRobustness.GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB;
+import static org.lwjgl.opengl.GL11.GL_VERSION;
 import static org.lwjgl.opengl.GL30.*;
 import static org.lwjgl.opengl.GL32.*;
-import static org.lwjgl.opengl.GL43.*;
-import static org.lwjgl.opengl.NVMultisampleCoverage.*;
+import static org.lwjgl.opengl.GL43.GL_CONTEXT_FLAG_DEBUG_BIT;
+import static org.lwjgl.opengl.NVMultisampleCoverage.GL_COLOR_SAMPLES_NV;
 import static org.lwjgl.opengl.WGL.*;
 import static org.lwjgl.opengl.WGLARBContextFlushControl.*;
 import static org.lwjgl.opengl.WGLARBCreateContext.*;
 import static org.lwjgl.opengl.WGLARBCreateContextProfile.*;
 import static org.lwjgl.opengl.WGLARBCreateContextRobustness.*;
-import static org.lwjgl.opengl.WGLARBMultisample.*;
+import static org.lwjgl.opengl.WGLARBMultisample.WGL_SAMPLES_ARB;
+import static org.lwjgl.opengl.WGLARBMultisample.WGL_SAMPLE_BUFFERS_ARB;
 import static org.lwjgl.opengl.WGLARBPixelFormat.*;
-import static org.lwjgl.opengl.WGLARBPixelFormatFloat.*;
-import static org.lwjgl.opengl.WGLARBRobustnessApplicationIsolation.*;
-import static org.lwjgl.opengl.WGLEXTCreateContextES2Profile.*;
-import static org.lwjgl.opengl.WGLEXTFramebufferSRGB.*;
-import static org.lwjgl.opengl.WGLNVMultisampleCoverage.*;
+import static org.lwjgl.opengl.WGLARBPixelFormatFloat.WGL_TYPE_RGBA_FLOAT_ARB;
+import static org.lwjgl.opengl.WGLARBRobustnessApplicationIsolation.WGL_CONTEXT_RESET_ISOLATION_BIT_ARB;
+import static org.lwjgl.opengl.WGLEXTCreateContextES2Profile.WGL_CONTEXT_ES2_PROFILE_BIT_EXT;
+import static org.lwjgl.opengl.WGLEXTFramebufferSRGB.WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT;
+import static org.lwjgl.opengl.WGLNVMultisampleCoverage.WGL_COLOR_SAMPLES_NV;
 import static org.lwjgl.opengl.awt.GLUtil.*;
-import static org.lwjgl.system.APIUtil.*;
+import static org.lwjgl.system.APIUtil.APIVersion;
+import static org.lwjgl.system.APIUtil.apiParseVersion;
 import static org.lwjgl.system.JNI.*;
-import static org.lwjgl.system.MemoryStack.*;
+import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.*;
 import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.system.windows.GDI32.*;
 import static org.lwjgl.system.windows.User32.*;
-import static org.lwjgl.system.windows.WindowsLibrary.*;
+import static org.lwjgl.system.windows.WindowsLibrary.HINSTANCE;
 
 /**
  * Windows-specific implementation of {@link PlatformGLCanvas}.
@@ -108,22 +122,18 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     }
 
     private static long createDummyWindow(MemoryStack stack) {
-        WNDCLASSEX in = WNDCLASSEX.callocStack(stack)
-            .cbSize(WNDCLASSEX.SIZEOF)
-            .hInstance(HINSTANCE)
-            .lpszClassName(stack.UTF16("AWTAPPWNDCLASS"));
+		String className = "AWTAPPWNDCLASS";
 
-        memPutAddress(
-            in.address() + WNDCLASSEX.LPFNWNDPROC,
-            User32.Functions.DefWindowProc
-        );
+        WNDCLASSEX in = WNDCLASSEX
+                .calloc(stack)
+                .cbSize(WNDCLASSEX.SIZEOF)
+                .lpfnWndProc(User32::DefWindowProc)
+                .hInstance(HINSTANCE)
+		        .lpszClassName(stack.UTF16(className));
 
-        short classAtom = RegisterClassEx(in);
-        if (classAtom == 0) {
-            throw new IllegalStateException("Failed to register WGL window class");
-        }
-
-        return nCreateWindowEx(WS_EX_APPWINDOW, classAtom & 0xFFFF, NULL, 0, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL,HINSTANCE, NULL);
+        RegisterClassEx(in);
+		return CreateWindowEx(WS_EX_APPWINDOW, className, "", 0, CW_USEDEFAULT, CW_USEDEFAULT,
+                800, 600, NULL, NULL, HINSTANCE, NULL);
     }
 
     @Override
