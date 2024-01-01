@@ -151,6 +151,10 @@ public abstract class AWTGLCanvas extends Canvas {
         platformCanvas.swapBuffers();
     }
     
+    public final void setSwapInterval(int interval) {
+        platformCanvas.setSwapInterval(interval);
+    }
+
     /**
      * Returns Graphics object that ignores {@link Graphics#clearRect(int, int, int, int)}
      * calls.
