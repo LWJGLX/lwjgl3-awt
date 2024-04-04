@@ -47,6 +47,7 @@ public class PlatformX11VKCanvas implements PlatformVKCanvas {
 
                 VkXlibSurfaceCreateInfoKHR pCreateInfo = VkXlibSurfaceCreateInfoKHR
                         .calloc(stack)
+                        .sType(VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR)
                         .dpy(dsiX11.display())
                         .window(dsiX11.drawable());
 
