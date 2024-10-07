@@ -336,6 +336,11 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     }
 
     @Override
+    public void setSwapInterval(int interval) {
+	/* XXX: How does this work on MacOS? */
+    }
+
+    @Override
     public boolean deleteContext(long context) {
         // frees created NSOpenGLView
         invokePPP(view, sel_getUid("removeFromSuperviewWithoutNeedingDisplay"), objc_msgSend);
