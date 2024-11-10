@@ -248,9 +248,11 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 objc_msgSend);
 
         // set layer on JAWTSurfaceLayers object
-        JNI.callPPPV(platformInfo,
+        JNI.callPPPPV(platformInfo,
+                ObjCRuntime.sel_getUid("performSelectorOnMainThread:withObject:waitUntilDone:"),
                 ObjCRuntime.sel_getUid("setLayer:"),
                 openglViewLayer,
+                ObjCRuntime.YES,
                 objc_msgSend);
 
         return view;
