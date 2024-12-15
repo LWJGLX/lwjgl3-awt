@@ -14,6 +14,7 @@ import org.lwjgl.system.macosx.ObjCRuntime;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.HierarchyEvent;
+import java.awt.geom.AffineTransform;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.DoubleBuffer;
@@ -88,6 +89,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     }
 
     public JAWTDrawingSurface ds;
+    private Canvas canvas;
     private long view;
     private int width;
     private int height;
@@ -95,6 +97,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
         this.ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+        this.canvas = canvas;
         canvas.addHierarchyListener(e -> {
             // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
             if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
@@ -356,7 +359,10 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 int height = dsi.bounds().height();
                 if (width != this.width || height != this.height) {
                     // [NSOpenGLCotext update] seems bugged. Updating renderer context with CGL works.
-                    CGLSetParameter(context, kCGLCPSurfaceBackingSize, new int[]{width, height});
+                    AffineTransform transform = canvas.getGraphicsConfiguration().getDefaultTransform();
+                    int backingWidth = (int) (width * transform.getScaleX());
+                    int backingHeight = (int) (height * transform.getScaleY());
+                    CGLSetParameter(context, kCGLCPSurfaceBackingSize, new int[]{backingWidth, backingHeight});
                     CGLEnable(context, kCGLCESurfaceBackingSize);
                     this.width = width;
                     this.height = height;
