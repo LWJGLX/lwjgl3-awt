@@ -119,7 +119,11 @@ public class GLData {
     /**
      * Whether to use sRGB color space.
      */
-    public boolean sRGB;
+    public boolean sRGB;    
+    /**
+     * Used to determine the sRGB extension to use
+     */
+    boolean extBuffer_sRGB = true;
     /**
      * Whether to use a floating point pixel format.
      */
