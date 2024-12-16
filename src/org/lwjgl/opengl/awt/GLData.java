@@ -76,17 +76,17 @@ public class GLData {
      * New fields not in SWT's GLData
      */
 
-    public static enum Profile {
-        CORE, COMPATIBILITY;
-    }
+    public enum Profile {
+        CORE, COMPATIBILITY
+	}
 
-    public static enum API {
-        GL, GLES;
-    }
+    public enum API {
+        GL, GLES
+	}
 
-    public static enum ReleaseBehavior {
-        NONE, FLUSH;
-    }
+    public enum ReleaseBehavior {
+        NONE, FLUSH
+	}
 
     /**
      * The major GL context version to use. It defaults to 0 for "not specified".
@@ -120,6 +120,10 @@ public class GLData {
      * Whether to use sRGB color space.
      */
     public boolean sRGB;
+    /**
+     * Used to determine the sRGB extension to use
+     */
+    boolean extBuffer_sRGB = true;
     /**
      * Whether to use a floating point pixel format.
      */
