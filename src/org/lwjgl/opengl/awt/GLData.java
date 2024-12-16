@@ -87,6 +87,10 @@ public class GLData {
     public static enum ReleaseBehavior {
         NONE, FLUSH;
     }
+    
+    public static enum SRGB {
+        EXT_sRGB, ARB_sRGB
+    }
 
     /**
      * The major GL context version to use. It defaults to 0 for "not specified".
@@ -120,6 +124,10 @@ public class GLData {
      * Whether to use sRGB color space.
      */
     public boolean sRGB;
+    /**
+     * 
+     */
+    public SRGB buffer_sRGB = SRGB.EXT_sRGB;
     /**
      * Whether to use a floating point pixel format.
      */

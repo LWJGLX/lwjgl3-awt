@@ -36,6 +36,7 @@ import static org.lwjgl.opengl.WGLARBContextFlushControl.*;
 import static org.lwjgl.opengl.WGLARBCreateContext.*;
 import static org.lwjgl.opengl.WGLARBCreateContextProfile.*;
 import static org.lwjgl.opengl.WGLARBCreateContextRobustness.*;
+import static org.lwjgl.opengl.WGLARBFramebufferSRGB.*;
 import static org.lwjgl.opengl.WGLARBMultisample.WGL_SAMPLES_ARB;
 import static org.lwjgl.opengl.WGLARBMultisample.WGL_SAMPLE_BUFFERS_ARB;
 import static org.lwjgl.opengl.WGLARBPixelFormat.*;
@@ -110,7 +111,11 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         if (attribs.accumRedSize > 0 || attribs.accumGreenSize > 0 || attribs.accumBlueSize > 0 || attribs.accumAlphaSize > 0)
             ib.put(WGL_ACCUM_BITS_ARB).put(attribs.accumRedSize + attribs.accumGreenSize + attribs.accumBlueSize + attribs.accumAlphaSize);
         if (attribs.sRGB)
-            ib.put(WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT).put(1);
+            if (attribs.buffer_sRGB == GLData.SRGB.EXT_sRGB) {
+                ib.put(WGL_FRAMEBUFFER_SRGB_CAPABLE_EXT).put(1);
+            } else {
+                ib.put(WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB).put(1);
+            }
         if (attribs.samples > 0) {
             ib.put(WGL_SAMPLE_BUFFERS_ARB).put(1);
             ib.put(WGL_SAMPLES_ARB).put(attribs.samples);
@@ -426,13 +431,21 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 }
             }
             if (attribs.sRGB) {
-                // Check for WGL_EXT_framebuffer_sRGB
-                boolean has_WGL_EXT_framebuffer_sRGB = wglExtensionsList.contains("WGL_EXT_framebuffer_sRGB");
-                if (!has_WGL_EXT_framebuffer_sRGB) {
+                // Check for WGL_EXT_framebuffer_sRGB | WGL_ARB_framebuffer_sRGB
+                boolean has_WGL_EXT_framebuffer_sRGB = wglExtensionsList.contains("WGL_EXT_framebuffer_sRGB"),
+                        has_WGL_ARB_framebuffer_sRGB = wglExtensionsList.contains("WGL_ARB_framebuffer_sRGB");
+                
+                if (! (has_WGL_EXT_framebuffer_sRGB || has_WGL_ARB_framebuffer_sRGB) )  {
                     ReleaseDC(windowHandle, hDC);
                     wglDeleteContext(dummyContext);
                     wglMakeCurrent(currentDc, currentContext);
                     throw new AWTException("sRGB color space requested but WGL_EXT_framebuffer_sRGB is unavailable");
+                }
+                
+                if (has_WGL_ARB_framebuffer_sRGB) {
+                    attribs.buffer_sRGB = GLData.SRGB.ARB_sRGB;
+                } else {
+                    attribs.buffer_sRGB = GLData.SRGB.EXT_sRGB;
                 }
             }
             if (attribs.pixelFormatFloat) {
