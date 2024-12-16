@@ -126,7 +126,7 @@ public class GLData {
     public boolean sRGB;
     
     /**
-     * <b>For internal use only<b>, used to determine the sRGB extension to use
+     * <b>For internal use only</b>, used to determine the sRGB extension to use
      */
     public SRGB buffer_sRGB = SRGB.EXT_sRGB;
     /**
