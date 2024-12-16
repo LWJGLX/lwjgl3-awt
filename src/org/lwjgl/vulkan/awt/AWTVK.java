@@ -4,17 +4,22 @@ import org.lwjgl.system.Platform;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 
-import java.awt.*;
+import java.awt.AWTException;
+import java.awt.Canvas;
 
 /**
- * Vulkan API. To use the surface, {@link org.lwjgl.vulkan.KHRSurface#VK_KHR_SURFACE_EXTENSION_NAME VK_KHR_SURFACE_EXTENSION_NAME}
+ * Vulkan API.
+ * <p>
+ * To use the surface, {@link org.lwjgl.vulkan.KHRSurface#VK_KHR_SURFACE_EXTENSION_NAME VK_KHR_SURFACE_EXTENSION_NAME}
  * and {@link #getSurfaceExtensionName()} must be enabled extensions.
  */
 public class AWTVK {
 
 	/**
-	 * Gets the required surface extension for the platform.
-	 * Also enable {@link org.lwjgl.vulkan.KHRSurface#VK_KHR_SURFACE_EXTENSION_NAME VK_KHR_SURFACE_EXTENSION_NAME}.
+	 * Gets the required instance extension for the particular platform.
+	 * <p>
+	 * Note: {@link org.lwjgl.vulkan.KHRSurface#VK_KHR_SURFACE_EXTENSION_NAME VK_KHR_SURFACE_EXTENSION_NAME}
+	 * must also be enabled when creating the instance.
 	 */
 	public static String getSurfaceExtensionName() {
 		switch (Platform.get()) {
@@ -27,8 +32,14 @@ public class AWTVK {
 	}
 
 	/**
-	 * Checks if the physical device supports the queue family index.
-	 * @param physicalDevice the physical device to check
+	 * Checks if the physical device supports presenting using
+	 * the provided queue family index.
+	 * <p>
+	 * This does not guarantee compatibility with any given surface,
+	 * but rather determines if the platform supports presentation
+	 * at all.
+	 *
+	 * @param physicalDevice   the physical device to check
 	 * @param queueFamilyIndex the index of the queue family to test
 	 * @return true if the physical device supports the queue family index
 	 */
@@ -44,7 +55,8 @@ public class AWTVK {
 
 	/**
 	 * Uses the provided canvas to create a Vulkan surface to draw on.
-	 * @param canvas canvas to render onto
+	 *
+	 * @param canvas   canvas to render onto
 	 * @param instance vulkan instance
 	 * @return handle of the surface
 	 * @throws AWTException if the surface creation fails
