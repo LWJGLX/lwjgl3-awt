@@ -9,7 +9,8 @@ import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkPhysicalDevice;
 import org.lwjgl.vulkan.VkWin32SurfaceCreateInfoKHR;
 
-import java.awt.*;
+import java.awt.AWTException;
+import java.awt.Canvas;
 import java.nio.LongBuffer;
 
 import static org.lwjgl.vulkan.KHRWin32Surface.*;
@@ -50,7 +51,7 @@ public class PlatformWin32VKCanvas implements PlatformVKCanvas {
                 JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(awt.getPlatformInfo());
 
                 // Gets a handle to the file used to create the calling process (.exe file)
-                long handle = WinBase.nGetModuleHandle(MemoryUtil.NULL);
+                long handle = WinBase.nGetModuleHandle(MemoryUtil.NULL, MemoryUtil.NULL);
 
                 VkWin32SurfaceCreateInfoKHR sci = VkWin32SurfaceCreateInfoKHR
                         .calloc(stack)
