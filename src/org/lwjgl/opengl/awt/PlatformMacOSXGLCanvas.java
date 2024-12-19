@@ -220,41 +220,49 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private long createNSOpenGLView(long platformInfo, long pixelFormat, int x, int y, int width, int height) {
         long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
 
-        // get offset in window from JAWTSurfaceLayers
-        long H = JNI.invokePPPPP(platformInfo,
-                ObjCRuntime.sel_getUid("windowLayer"),
-                ObjCRuntime.sel_getUid("frame"),
-                ObjCRuntime.sel_getUid("size"),
-                objc_msgSend);
-        // height is the 4th member of the 4*64bit struct
-        double h = MemoryUtil.memGetDouble(H+3*8);
-
-        // MTKView *view = [[MTKView alloc] initWithFrame:frame device:device];
-        // get MTKView class and allocate instance
+        // NSOpenGLView *view = [[NSOpenGLView alloc] initWithFrame:frame pixelFormat:pixelFormat];
+        // get NSOpenGLView class and allocate instance
         long NSOpenGLView = ObjCRuntime.objc_getClass("NSOpenGLView");
         long nsOpenGLView = JNI.invokePPP(NSOpenGLView,
                 ObjCRuntime.sel_getUid("alloc"),
                 objc_msgSend);
 
-        final double[] frame = new double[]{x, y, width, height};
-        // init MTKView with frame and device
-        long view = NSOpenGLView_initWithFrame(nsOpenGLView, frame, pixelFormat);
+        // init NSOpenGLView with frame and device
+        long view = NSOpenGLView_initWithFrame(nsOpenGLView, new double[]{0, 0, width, height}, pixelFormat);
 
+        // make NSOpenGLView layer-backed
         JNI.invokePPV(nsOpenGLView,
                 ObjCRuntime.sel_getUid("setWantsLayer:"),
                 true,
                 objc_msgSend);
 
-        // get layer from NSOpenGLView instance
+        // get layer from NSOpenGLView instance and set its auto resizing mask (kCALayerWidthSizable | kCALayerHeightSizable)
         long openglViewLayer = JNI.invokePPJ(nsOpenGLView,
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
+        JNI.callPPPV(openglViewLayer,
+                ObjCRuntime.sel_getUid("setAutoresizingMask:"),
+                18,
+                objc_msgSend);
 
-        // set layer on JAWTSurfaceLayers object
+        // create intermediate layer and set its frame
+        long caLayer = ObjCRuntime.objc_getClass("CALayer");
+        long interLayer = JNI.invokePPP(caLayer,
+                ObjCRuntime.sel_getUid("layer"),
+                objc_msgSend);
+        setOpenglViewLayersFrame(interLayer, new double[]{x, y, width, height});
+
+        // add NSOpenGLView's layer to the intermediate layer
+        JNI.callPPPV(interLayer,
+                ObjCRuntime.sel_getUid("addSublayer:"),
+                openglViewLayer,
+                objc_msgSend);
+
+        // set intermediate layer as JAWTSurfaceLayer's layer
         JNI.callPPPPV(platformInfo,
                 ObjCRuntime.sel_getUid("performSelectorOnMainThread:withObject:waitUntilDone:"),
                 ObjCRuntime.sel_getUid("setLayer:"),
-                openglViewLayer,
+                interLayer,
                 ObjCRuntime.YES,
                 objc_msgSend);
 
@@ -332,6 +340,66 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         }
 
         return v;
+    }
+
+    private static void setOpenglViewLayersFrame(long openglViewLayer, double[] frame) {
+        // Prepare the call interface
+        FFICIF cif = FFICIF.malloc();
+
+        PointerBuffer argumentTypes = BufferUtils.createPointerBuffer(6) // 3 arguments, one of them an array of 4 doubles
+                .put(0, ffi_type_pointer) // openglViewLayer*
+                .put(1, ffi_type_pointer) // setFrame:
+                .put(2, ffi_type_double) // CGRect
+                .put(3, ffi_type_double) // CGRect
+                .put(4, ffi_type_double) // CGRect
+                .put(5, ffi_type_double); // CGRect
+
+        int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_pointer, argumentTypes);
+        if (status != FFI_OK) {
+            throw new IllegalStateException("ffi_prep_cif failed: " + status);
+        }
+
+        // An array of pointers that point to the actual argument values.
+        PointerBuffer arguments = BufferUtils.createPointerBuffer(7);
+
+        // Storage for the actual argument values.
+        ByteBuffer values = BufferUtils.createByteBuffer(
+                POINTER_SIZE +  // MTKView*
+                POINTER_SIZE +  // initWithFrame*
+                4 * 8           // CGRect
+        );
+
+        // The memory we'll modify using libffi
+        DoubleBuffer target = BufferUtils.createDoubleBuffer(4);
+        target.put(frame, 0, 4);
+
+        // Set up the argument buffers
+        {
+            // openglViewLayer*
+            arguments.put(memAddress(values));
+            PointerBuffer.put(values, openglViewLayer);
+
+            // setFrame*
+            arguments.put(memAddress(values));
+            PointerBuffer.put(values, ObjCRuntime.sel_getUid("setFrame:"));
+
+            // frame
+            arguments.put(memAddress(values));
+            values.putDouble(frame[0]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[1]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[2]);
+            arguments.put(memAddress(values));
+            values.putDouble(frame[3]);
+        }
+        arguments.flip();
+        values.flip();
+
+        // Invoke the function and validate
+        ByteBuffer view = BufferUtils.createByteBuffer(8);
+        ffi_call(cif, ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend"), view, arguments);
+        cif.free();
     }
 
     @Override
