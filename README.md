@@ -1,6 +1,6 @@
 [![Build-and-publish Actions Status](https://github.com/LWJGLX/lwjgl3-awt/workflows/build-and-publish/badge.svg)](https://github.com/LWJGLX/lwjgl3-awt/actions) [![Maven Central](https://img.shields.io/maven-central/v/org.lwjglx/lwjgl3-awt.svg?label=Maven%20Central)](https://search.maven.org/search?q=g:%22org.lwjglx%22%20AND%20a:%22lwjgl3-awt%22&core=gav) [![Maven Snapshot](https://img.shields.io/nexus/s/https/oss.sonatype.org/org.lwjglx/lwjgl3-awt.svg)](https://oss.sonatype.org/content/repositories/snapshots/org/lwjglx/lwjgl3-awt/)
 
-This library allows for using OpenGL and Vulkan LWJGL 3 surfaces in AWT (and by extension, Swing) frames. Works with MacOS X, Windows, and Linux.
+This library allows for using OpenGL and Vulkan LWJGL 3 surfaces in AWT (and by extension, Swing) frames. Works with macOS, Windows, and Linux.
 
 ## What does it get me?
 
@@ -16,7 +16,7 @@ Support for OpenGL:
 - delay before swap - Nvidia only
 
 Support for Vulkan:
-- Vulkan 1.0, 1.1, 1.2, 1.3
+- Vulkan 1.0, 1.1, 1.2, 1.3, 1.4
 - MoltenVK support
 
 _Note about compatibility_:
