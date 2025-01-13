@@ -399,6 +399,10 @@
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-jawt</artifactId>
 		</dependency>
+                <dependency>
+                    <groupId>org.lwjgl</groupId>
+                    <artifactId>lwjgl-egl</artifactId>
+                </dependency>
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-opengl</artifactId>
@@ -420,7 +424,7 @@
 			<artifactId>lwjgl</artifactId>
 			<classifier>${lwjgl.natives}</classifier>
 		</dependency>
-
+                
 		<!-- TESTS -->
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>

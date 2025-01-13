@@ -116,6 +116,21 @@ public class AWT implements AutoCloseable {
 				Platform.get() == Platform.MACOSX ||
 				Platform.get() == Platform.LINUX;
 	}
+        
+        /**
+         * Determines whether the platform uses the Wayland window manager.
+         * @return boolean
+         */
+        public static boolean isWayland() {
+                switch (Platform.get()) {
+                        case FREEBSD:
+                        case LINUX:
+                                if ("wayland".equals(System.getenv("XDG_SESSION_TYPE")) && System.getenv("WAYLAND_DISPLAY") != null) {
+                                        return true;
+                                }
+                }
+                return false;
+        }
 
 	/**
 	 * Returns a pointer to a platform-specific struct with platform-specific information.
