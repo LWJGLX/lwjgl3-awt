@@ -292,7 +292,7 @@ public class PlatformWLGLCanvas implements PlatformGLCanvas {
                 flags |= EGL_CONTEXT_OPENGL_ROBUST_ACCESS_BIT_KHR;
             }
 
-            if (desired.majorVersion != 0 && desired.majorVersion != 0) {
+            if (desired.majorVersion > 0) {
                 attribs.put(EGL_CONTEXT_MAJOR_VERSION_KHR).put(desired.majorVersion);
                 attribs.put(EGL_CONTEXT_MINOR_VERSION_KHR).put(desired.minorVersion);
             }
