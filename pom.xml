@@ -424,7 +424,7 @@
 			<artifactId>lwjgl</artifactId>
 			<classifier>${lwjgl.natives}</classifier>
 		</dependency>
-                
+
 		<!-- TESTS -->
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
