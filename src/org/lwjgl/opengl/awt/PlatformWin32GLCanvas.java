@@ -36,7 +36,7 @@ import static org.lwjgl.opengl.WGLARBContextFlushControl.*;
 import static org.lwjgl.opengl.WGLARBCreateContext.*;
 import static org.lwjgl.opengl.WGLARBCreateContextProfile.*;
 import static org.lwjgl.opengl.WGLARBCreateContextRobustness.*;
-import static org.lwjgl.opengl.WGLARBFramebufferSRGB.*;
+import static org.lwjgl.opengl.WGLARBFramebufferSRGB.WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB;
 import static org.lwjgl.opengl.WGLARBMultisample.WGL_SAMPLES_ARB;
 import static org.lwjgl.opengl.WGLARBMultisample.WGL_SAMPLE_BUFFERS_ARB;
 import static org.lwjgl.opengl.WGLARBPixelFormat.*;
@@ -181,7 +181,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             flags |= PFD_DOUBLEBUFFER;
         if (attribs.stereo)
             flags |= PFD_STEREO;
-        PIXELFORMATDESCRIPTOR pfd = PIXELFORMATDESCRIPTOR.callocStack(stack)
+        PIXELFORMATDESCRIPTOR pfd = PIXELFORMATDESCRIPTOR.calloc(stack)
             .nSize((short) PIXELFORMATDESCRIPTOR.SIZEOF)
             .nVersion((short) 1) // this should always be 1
             .dwLayerMask(PFD_MAIN_PLANE)
