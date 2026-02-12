@@ -8,7 +8,7 @@ jobs:
       run: sudo apt-get update
     - name: Install Dependencies
       run: sudo apt-get install -y git openjdk-8-jdk xvfb mesa*
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Build with Maven
       run: |
         export XVFB_WHD="1920x1080x24"
@@ -34,9 +34,9 @@ jobs:
   test-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up JDK 8
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v5
         with:
           java-version: 8
           distribution: 'zulu'
@@ -54,23 +54,23 @@ jobs:
       - name: Build with Maven
         run: ./mvnw -B test
       - name: Upload Images
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: images-windows
           path: 'target/*.png'
   test-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up JDK 8
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v5
         with:
           java-version: 8
           distribution: 'zulu'
       - name: Build with Maven
         run: ./mvnw -B test
       - name: Upload Images
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: images-macos
           path: 'target/*.png'
