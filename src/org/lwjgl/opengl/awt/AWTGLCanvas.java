@@ -5,6 +5,7 @@ import org.lwjgl.awthacks.NonClearGraphics2D;
 import org.lwjgl.system.Platform;
 
 import java.awt.*;
+import org.lwjgl.awt.AWT;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.ComponentListener;
@@ -17,21 +18,23 @@ import java.util.concurrent.Callable;
  */
 public abstract class AWTGLCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
-    protected PlatformGLCanvas platformCanvas = createPlatformCanvas();
+    protected PlatformGLCanvas platformCanvas;
 
-    private static PlatformGLCanvas createPlatformCanvas() {
+    private static PlatformGLCanvas createPlatformCanvas(GLData conf) {
         switch (Platform.get()) {
         case WINDOWS:
             return new PlatformWin32GLCanvas();
         case LINUX:
-            return new PlatformLinuxGLCanvas();
+            return (conf.platform == GLData.Platform.Default && AWT.isWayland()) 
+                    ? new PlatformWLGLCanvas()      // -> Wayland
+                    : new PlatformLinuxGLCanvas();  // -> X11
         case MACOSX:
             return new PlatformMacOSXGLCanvas();
         default:
             throw new UnsupportedOperationException("Platform " + Platform.get() + " not yet supported");
         }
     }
-
+    
     protected long context;
     protected final GLData data;
     protected final GLData effective = new GLData();
@@ -65,7 +68,8 @@ public abstract class AWTGLCanvas extends Canvas {
         this.platformCanvas.dispose();
     }
     protected AWTGLCanvas(GLData data) {
-        this.data = data;
+        this.platformCanvas = createPlatformCanvas(data);
+        this.data           = data;
         this.addComponentListener(listener);
     }
 
