@@ -1,9 +1,3 @@
-**⚠️ Notice: Builds aren't being published to Maven Central ⚠️**
-
-Unfortunately, the owner of the LWJGLX organization is no longer active, and changes to this repository no longer are being published to Maven Central (see issue [#87](https://github.com/LWJGLX/lwjgl3-awt/issues/87)). [LWJGL 3.4.0](https://github.com/LWJGL/lwjgl3/blob/master/doc/notes/3.4.0.md) removed a function this library uses, causing a `NoSuchMethodError` to be thrown when using the OpenGL side of this library. The immediate remedy is to build and distribute this library yourself, with a permanent resolution being considered.
-
-----
-
 [![Build-and-publish Actions Status](https://github.com/LWJGLX/lwjgl3-awt/workflows/build-and-publish/badge.svg)](https://github.com/LWJGLX/lwjgl3-awt/actions) [![Maven Central](https://img.shields.io/maven-central/v/org.lwjglx/lwjgl3-awt.svg?label=Maven%20Central)](https://search.maven.org/search?q=g:%22org.lwjglx%22%20AND%20a:%22lwjgl3-awt%22&core=gav) [![Maven Snapshot](https://img.shields.io/nexus/s/https/oss.sonatype.org/org.lwjglx/lwjgl3-awt.svg)](https://oss.sonatype.org/content/repositories/snapshots/org/lwjglx/lwjgl3-awt/)
 
 This library allows for using OpenGL and Vulkan LWJGL 3 surfaces in AWT (and by extension, Swing) frames. Works with macOS, Windows, and Linux.

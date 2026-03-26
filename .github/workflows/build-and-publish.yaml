@@ -15,9 +15,13 @@ jobs:
         java-version: 8
         distribution: 'zulu'
         server-id: central
-        server-username: ${{ secrets.nexus_username }}
-        server-password: ${{ secrets.nexus_password }}
+        server-username: MAVEN_USERNAME
+        server-password: MAVEN_PASSWORD
         gpg-private-key: ${{ secrets.gpg_private_key }}
-        gpg-passphrase: ${{ secrets.gpg_passphrase }}
+        gpg-passphrase: MAVEN_GPG_PASSPHRASE
     - name: Build and publish to Maven Central
-      run: mvn deploy -DskipTests
+      run: mvn deploy -Pdeploy -DskipTests
+      env:
+        MAVEN_USERNAME: ${{ secrets.nexus_username }}
+        MAVEN_PASSWORD: ${{ secrets.nexus_password }}
+        MAVEN_GPG_PASSPHRASE: ${{ secrets.gpg_passphrase }}
