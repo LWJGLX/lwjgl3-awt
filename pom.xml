@@ -412,7 +412,7 @@
 		<dependency>
 			<groupId>org.joml</groupId>
 			<artifactId>joml</artifactId>
-			<version>1.10.4</version>
+			<version>1.10.8</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
