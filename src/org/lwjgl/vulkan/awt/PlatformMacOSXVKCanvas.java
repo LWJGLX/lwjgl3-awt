@@ -1,6 +1,5 @@
 package org.lwjgl.vulkan.awt;
 
-import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.awt.AWT;
 import org.lwjgl.awt.MacOSX;
@@ -16,7 +15,7 @@ import org.lwjgl.vulkan.VkPhysicalDevice;
 
 import javax.swing.*;
 import java.awt.*;
-import java.nio.ByteBuffer;
+import java.nio.DoubleBuffer;
 import java.nio.LongBuffer;
 
 import static org.lwjgl.vulkan.EXTMetalSurface.*;
@@ -47,12 +46,18 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
      * Because {@link JNI} does not provide a method signature for {@code PPDDDDPP},
      * we have to construct a call interface ourselves via {@link LibFFI}.
      * <p>
-     * {@code
+	 * This method is equivalent to the following Objective-C code:
+     * <pre>
      * id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-     * MTKView *view = [[MTKView alloc] initWithFrame:frame device:device]; // frame is from a GCRectMake();
-     * surfaceLayers.layer = view.layer; // jawt platform object
-     * return view.layer;
-     * }
+     * MTKView *view = [[MTKView alloc] initWithFrame:CGRectMake(x, y, width, height) device:device];
+	 * CALayer *layer = view.layer;
+	 * [layer setAutoresizingMask:(kCALayerWidthSizable | kCAHeightSizable)];
+	 * CALayer *interLayer = [CALayer layer];
+	 * [interLayer setFrame:CGRectMake(x, y, width, height)];
+	 * [interLayer addSublayer:layer];
+	 * [platformInfo performSelectorOnMainThread:@selector(setLayer:) withObject:interLayer waitUntilDone:YES];
+     * return layer;
+     * </pre>
      *
      * @param platformInfo pointer to the jawt platform information struct
      * @param x            x position of the window
@@ -61,107 +66,79 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
      * @param height       window height
      * @return pointer to a native window handle
      */
-    private static long createMTKView(long platformInfo, int x, int y, int width, int height) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            // Load the MetalKit bundle. getFunctionAddress forces it:
-            // https://developer.apple.com/documentation/corefoundation/1537143-cfbundlegetfunctionpointerfornam?language=objc
-			MacOSXLibrary
-                    .create("/System/Library/Frameworks/MetalKit.framework")
-                    .getFunctionAddress("");
+    private static long createMTKView(long platformInfo, int x, int y, int width, int height) throws AWTException {
+		// Load the MetalKit bundle. getFunctionAddress forces it:
+		// https://developer.apple.com/documentation/corefoundation/1537143-cfbundlegetfunctionpointerfornam?language=objc
+		MacOSXLibrary
+				.create("/System/Library/Frameworks/MetalKit.framework")
+				.getFunctionAddress("");
 
-            SharedLibrary metal = MacOSXLibrary.create("/System/Library/Frameworks/Metal.framework");
-            long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
+		SharedLibrary metal = MacOSXLibrary.create("/System/Library/Frameworks/Metal.framework");
+		long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
 
-            // id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-            long device = JNI.invokeP(metal.getFunctionAddress("MTLCreateSystemDefaultDevice"));
-
-
-            PointerBuffer argumentTypes = BufferUtils.createPointerBuffer(7) // 4 arguments, one of them an array of 4 doubles
-                    .put(0, LibFFI.ffi_type_pointer) // MTKView*
-                    .put(1, LibFFI.ffi_type_pointer) // initWithFrame:
-                    .put(2, LibFFI.ffi_type_double) // CGRect
-                    .put(3, LibFFI.ffi_type_double) // CGRect
-                    .put(4, LibFFI.ffi_type_double) // CGRect
-                    .put(5, LibFFI.ffi_type_double) // CGRect
-                    .put(6, LibFFI.ffi_type_pointer); // device*
-
-            // Prepare the call interface
-            FFICIF cif = FFICIF.malloc(stack);
-            int status = LibFFI.ffi_prep_cif(cif, LibFFI.FFI_DEFAULT_ABI, LibFFI.ffi_type_pointer, argumentTypes);
-            if (status != LibFFI.FFI_OK) {
-                throw new IllegalStateException("ffi_prep_cif failed: " + status);
-            }
-
-            // An array of pointers that point to the actual argument values.
-            PointerBuffer arguments = stack.mallocPointer(7);
-
-            // Storage for the actual argument values.
-            ByteBuffer values = stack.malloc(
-                            Pointer.POINTER_SIZE +     // MTKView*
-                            Pointer.POINTER_SIZE +     // initWithFrame*
-                            Double.BYTES * 4 +         // CGRect (4 doubles)
-                            Pointer.POINTER_SIZE       // device*
-            );
-
-            // MTKView *view = [MTKView alloc];
-            long mtkView = JNI.invokePPP(
-                    ObjCRuntime.objc_getClass("MTKView"),
-                    ObjCRuntime.sel_getUid("alloc"),
-                    objc_msgSend);
-
-            // Set up the argument buffers by inserting pointers
-
-            // MTKView*
-            arguments.put(MemoryUtil.memAddress(values));
-            PointerBuffer.put(values, mtkView);
-
-            // initWithFrame*
-            arguments.put(MemoryUtil.memAddress(values));
-            PointerBuffer.put(values, ObjCRuntime.sel_getUid("initWithFrame:"));
-
-            // frame
-            arguments.put(MemoryUtil.memAddress(values));
-            values.putDouble(x);
-            arguments.put(MemoryUtil.memAddress(values));
-            values.putDouble(y);
-            arguments.put(MemoryUtil.memAddress(values));
-            values.putDouble(width);
-            arguments.put(MemoryUtil.memAddress(values));
-            values.putDouble(height);
-
-            // device*
-            arguments.put(MemoryUtil.memAddress(values));
-            values.putLong(device);
-
-            arguments.flip();
-            values.flip();
-
-            // [view initWithFrame:rect device:device];
-            // Returns itself, we just need to know if it's NULL
-            LongBuffer pMTKView = stack.mallocLong(1);
-            LibFFI.ffi_call(cif, objc_msgSend, MemoryUtil.memByteBuffer(pMTKView), arguments);
-            if (pMTKView.get(0) == MemoryUtil.NULL) {
-                throw new IllegalStateException("[MTKView initWithFrame:device:] returned null.");
-            }
+		// id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+		long device = JNI.invokeP(metal.getFunctionAddress("MTLCreateSystemDefaultDevice"));
 
 
-            // layer = view.layer;
-            long layer = JNI.invokePPP(mtkView,
-                    ObjCRuntime.sel_getUid("layer"),
-                    objc_msgSend);
+		// MTKView *view = [MTKView alloc];
+		long alloc = JNI.invokePPP(
+				ObjCRuntime.objc_getClass("MTKView"),
+				ObjCRuntime.sel_getUid("alloc"),
+				objc_msgSend);
 
-            // set layer on JAWTSurfaceLayers object
-            // surfaceLayers.layer = layer;
-            JNI.invokePPPV(platformInfo,
-                    ObjCRuntime.sel_getUid("setLayer:"),
-                    layer,
-                    objc_msgSend);
+		// [view initWithFrame:CGRectMake(x, y, width, height) device:device];
+		long mtkView = invokePPDDDDPP(alloc,
+				ObjCRuntime.sel_getUid("initWithFrame:device:"),
+				x, y, width, height,
+				device,
+				objc_msgSend);
+		if (mtkView == ObjCRuntime.nil) {
+			throw new AWTException("Failed to invoke initWithFrame:device:");
+		}
 
-            // return layer;
-            return layer;
-        }
-    }
+		// CALayer *layer = view.layer;
+		long layer = JNI.invokePPP(mtkView,
+				ObjCRuntime.sel_getUid("layer"),
+				objc_msgSend);
 
+		// [layer setAutoresizingMask:(kCALayerWidthSizable | kCAHeightSizable)];
+		JNI.invokePPPV(layer,
+				ObjCRuntime.sel_getUid("setAutoresizingMask:"),
+				18,
+				objc_msgSend);
+
+		// create intermediate layer and set its frame
+		// CALayer *interLayer = [CALayer layer];
+		long interLayer = JNI.invokePPP(
+				ObjCRuntime.objc_getClass("CALayer"),
+				ObjCRuntime.sel_getUid("layer"),
+				objc_msgSend);
+
+		// [interLayer setFrame:CGRectMake(x, y, width, height)];
+		invokePPDDDDV(interLayer,
+				ObjCRuntime.sel_getUid("setFrame:"),
+				x, y, width, height,
+				objc_msgSend);
+
+		// add NSOpenGLView's layer to the intermediate layer
+		// [interLayer addSublayer:layer];
+		JNI.invokePPPV(interLayer,
+				ObjCRuntime.sel_getUid("addSublayer:"),
+				layer,
+				objc_msgSend);
+
+		// set intermediate layer as JAWTSurfaceLayer's layer
+		// [platformInfo performSelectorOnMainThread:@selector(setLayer:) withObject:interLayer waitUntilDone:YES];
+		JNI.invokePPPPV(platformInfo,
+				ObjCRuntime.sel_getUid("performSelectorOnMainThread:withObject:waitUntilDone:"),
+				ObjCRuntime.sel_getUid("setLayer:"),
+				interLayer,
+				ObjCRuntime.YES,
+				objc_msgSend);
+
+		// return layer;
+		return layer;
+	}
 
     /**
      * @deprecated use {@link AWTVK#create(Canvas, VkInstance)}
@@ -241,4 +218,84 @@ public class PlatformMacOSXVKCanvas implements PlatformVKCanvas {
     static boolean checkSupport(VkPhysicalDevice physicalDevice, int queueFamilyIndex) {
         return true;
     }
+
+	private static long invokePPDDDDPP(long mtkView, long sel, double x, double y, double width, double height, long device, long objc_msgSend) throws AWTException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+
+			PointerBuffer argumentTypes = stack.pointers(
+					LibFFI.ffi_type_pointer, // MTKView*
+					LibFFI.ffi_type_pointer, // @selector(initWithFrame:device:)
+					LibFFI.ffi_type_double, // CGRect
+					LibFFI.ffi_type_double, // CGRect
+					LibFFI.ffi_type_double, // CGRect
+					LibFFI.ffi_type_double, // CGRect
+					LibFFI.ffi_type_pointer // device*
+			);
+
+			// Prepare the call interface
+			FFICIF cif = FFICIF.malloc(stack);
+			int status = LibFFI.ffi_prep_cif(cif, LibFFI.FFI_DEFAULT_ABI, LibFFI.ffi_type_pointer, argumentTypes);
+			if (status != LibFFI.FFI_OK) {
+				throw new AWTException("ffi_prep_cif failed: " + status);
+			}
+
+			// Storage for the actual arguments
+			DoubleBuffer struct = stack.doubles(x, y, width, height);
+			PointerBuffer pointers = stack.pointers(mtkView, sel, device);
+
+			// Point the arguments to the actual values
+			PointerBuffer arguments = stack.pointers(
+					MemoryUtil.memAddress(pointers, 0),
+					MemoryUtil.memAddress(pointers, 1),
+					MemoryUtil.memAddress(struct, 0),
+					MemoryUtil.memAddress(struct, 1),
+					MemoryUtil.memAddress(struct, 2),
+					MemoryUtil.memAddress(struct, 3),
+					MemoryUtil.memAddress(pointers, 2)
+			);
+
+			// [view initWithFrame:rect device:device];
+			// Returns itself, we just need to know if it's NULL
+			LongBuffer pMTKView = stack.mallocLong(1);
+			LibFFI.ffi_call(cif, objc_msgSend, MemoryUtil.memByteBuffer(pMTKView), arguments);
+
+			return pMTKView.get(0);
+		}
+	}
+
+	private static void invokePPDDDDV(long interLayer, long sel, double x, double y, double width, double height, long objc_msgSend) throws AWTException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			// Prepare the call interface
+			FFICIF cif = FFICIF.malloc(stack);
+
+			PointerBuffer argumentTypes = stack.pointers(
+					LibFFI.ffi_type_pointer, // interLayer*
+					LibFFI.ffi_type_pointer, // @selector(setFrame:)
+					LibFFI.ffi_type_double, // CGRect
+					LibFFI.ffi_type_double, // CGRect
+					LibFFI.ffi_type_double, // CGRect
+					LibFFI.ffi_type_double // CGRect
+			);
+
+			int status = LibFFI.ffi_prep_cif(cif, LibFFI.FFI_DEFAULT_ABI, LibFFI.ffi_type_void, argumentTypes);
+			if (status != LibFFI.FFI_OK) {
+				throw new AWTException("ffi_prep_cif failed: " + status);
+			}
+
+			DoubleBuffer cgRect = stack.doubles(x, y, width, height);
+			PointerBuffer pointers = stack.pointers(interLayer, sel);
+
+			// An array of pointers that point to the actual argument values.
+			PointerBuffer arguments = stack.mallocPointer(6)
+					.put(0, MemoryUtil.memAddress(pointers, 0))
+					.put(1, MemoryUtil.memAddress(pointers, 1))
+					.put(2, MemoryUtil.memAddress(cgRect, 0))
+					.put(3, MemoryUtil.memAddress(cgRect, 1))
+					.put(4, MemoryUtil.memAddress(cgRect, 2))
+					.put(5, MemoryUtil.memAddress(cgRect, 3));
+
+			// Invoke the function and validate
+			LibFFI.ffi_call(cif, objc_msgSend, null, arguments);
+		}
+	}
 }

@@ -220,39 +220,47 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private long createNSOpenGLView(long platformInfo, long pixelFormat, int x, int y, int width, int height) {
         long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
 
-        // NSOpenGLView *view = [[NSOpenGLView alloc] initWithFrame:frame pixelFormat:pixelFormat];
-        // get NSOpenGLView class and allocate instance
-        long NSOpenGLView = ObjCRuntime.objc_getClass("NSOpenGLView");
-        long nsOpenGLView = JNI.invokePPP(NSOpenGLView,
+        // NSOpenGLView *nsOpenGLView = [NSOpenGLView alloc];
+		long nsOpenGLView = JNI.invokePPP(
+                ObjCRuntime.objc_getClass("NSOpenGLView"),
                 ObjCRuntime.sel_getUid("alloc"),
                 objc_msgSend);
 
         // init NSOpenGLView with frame and device
-        long view = NSOpenGLView_initWithFrame(nsOpenGLView, new double[]{0, 0, width, height}, pixelFormat);
+        // NSOpenGLView *view = [nsOpenGLView initWithFrame:pixelFormat:];
+        long view = NSOpenGLView_initWithFrame(nsOpenGLView, 0, 0, width, height, pixelFormat);
 
         // make NSOpenGLView layer-backed
-        JNI.invokePPV(nsOpenGLView,
+        // [view setWantsLayer:YES];
+        JNI.invokePPV(view,
                 ObjCRuntime.sel_getUid("setWantsLayer:"),
                 true,
                 objc_msgSend);
 
         // get layer from NSOpenGLView instance and set its auto resizing mask (kCALayerWidthSizable | kCALayerHeightSizable)
-        long openglViewLayer = JNI.invokePPJ(nsOpenGLView,
+        // CALayer *layer = nsOpenGLView.layer;
+        long openglViewLayer = JNI.invokePPJ(view,
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
+
+        // [layer setAutoresizingMask:(kCALayerWidthSizable | kCAHeightSizable)];
         JNI.callPPPV(openglViewLayer,
                 ObjCRuntime.sel_getUid("setAutoresizingMask:"),
                 18,
                 objc_msgSend);
 
         // create intermediate layer and set its frame
-        long caLayer = ObjCRuntime.objc_getClass("CALayer");
-        long interLayer = JNI.invokePPP(caLayer,
+        // CALayer *interLayer = [CALayer layer];
+		long interLayer = JNI.invokePPP(
+                ObjCRuntime.objc_getClass("CALayer"),
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
+
+        // [interLayer setFrame:CGRectMake(x, y, width, height)];
         setOpenglViewLayersFrame(interLayer, new double[]{x, y, width, height});
 
         // add NSOpenGLView's layer to the intermediate layer
+        // [interLayer addSublayer:layer];
         JNI.callPPPV(interLayer,
                 ObjCRuntime.sel_getUid("addSublayer:"),
                 openglViewLayer,
@@ -269,7 +277,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         return view;
     }
 
-    private static long NSOpenGLView_initWithFrame(long nsopenglView, double[] frame, long pixelFormat) {
+    private static long NSOpenGLView_initWithFrame(long nsopenglView, double x, double y, double width, double height, long pixelFormat) {
         // Prepare the call interface
         FFICIF cif = FFICIF.malloc();
 
@@ -298,10 +306,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                         POINTER_SIZE    // pixelFormat*
         );
 
-        // The memory we'll modify using libffi
-        DoubleBuffer target = BufferUtils.createDoubleBuffer(4);
-        target.put(frame, 0, 4);
-
         // Setup the argument buffers
         {
             // MTKView*
@@ -314,13 +318,13 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
             // frame
             arguments.put(memAddress(values));
-            values.putDouble(frame[0]);
+            values.putDouble(x);
             arguments.put(memAddress(values));
-            values.putDouble(frame[1]);
+            values.putDouble(y);
             arguments.put(memAddress(values));
-            values.putDouble(frame[2]);
+            values.putDouble(width);
             arguments.put(memAddress(values));
-            values.putDouble(frame[3]);
+            values.putDouble(height);
 
             // pixelFormat*
             arguments.put(memAddress(values));
@@ -331,7 +335,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
         // Invoke the function and validate
         ByteBuffer view = BufferUtils.createByteBuffer(8);
-        ffi_call(cif, ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend"), view, arguments);
+        ffi_call(cif, objc_msgSend, view, arguments);
         cif.free();
 
         final long v = view.asLongBuffer().get(0);
