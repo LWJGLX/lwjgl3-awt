@@ -78,15 +78,30 @@ public class GLData {
 
     public enum Profile {
         CORE, COMPATIBILITY
-	}
+    }
 
     public enum API {
         GL, GLES
-	}
+    }
 
     public enum ReleaseBehavior {
         NONE, FLUSH
-	}
+    }
+    
+    public enum Platform {
+        Native, Default
+    }
+    
+    /**
+     * Determines which backend to use when creating the GL context (only valid for Linux based platforms), this has no effect on Windows or MacOS.
+     * <p>
+     * <ol>
+     * <li><b>{@link Platform#Default}</b>: Depending on the window manager, you can create a GLX or EGL (Wayland) context.</li>
+     * <li><b>{@link Platform#Native}</b>: Forces the use of a GLX context (window manager doesn't matter, this is functional with XWayland as long as GLX loading is configured correctly).</li>
+     * </ol>
+     * </p>
+     */
+    public Platform platform = Platform.Default;
 
     /**
      * The major GL context version to use. It defaults to 0 for "not specified".
