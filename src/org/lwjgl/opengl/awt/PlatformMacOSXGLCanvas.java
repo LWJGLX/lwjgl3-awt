@@ -116,14 +116,18 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
                 try {
                     // if the canvas is inside e.g. a JSplitPane, the dsi coordinates are wrong and need to be corrected
+                    int x = dsi.bounds().x();
+                    int y = dsi.bounds().y();
+                    int width = dsi.bounds().width();
+                    int height = dsi.bounds().height();
                     JRootPane rootPane = SwingUtilities.getRootPane(canvas);
                     if (rootPane != null) {
                         Point point = SwingUtilities.convertPoint(canvas, new Point(), rootPane);
-                        dsi.bounds().x(point.x);
-                        dsi.bounds().y(point.y);
+                        x = point.x;
+                        y = rootPane.getHeight() - point.y - height;
                     }
-                    width = dsi.bounds().width();
-                    height = dsi.bounds().height();
+                    this.width = width;
+                    this.height = height;
 
                     //TODO: we don't really need 100
                     ByteBuffer attribsArray = ByteBuffer.allocateDirect(4 * 100).order(ByteOrder.nativeOrder());
@@ -202,7 +206,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
                     pixelFormat = invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"), MemoryUtil.memAddress(attribsArray), objc_msgSend);
 
-                    view = createNSOpenGLView(dsi.platformInfo(), pixelFormat, dsi.bounds().x(), dsi.bounds().y(), width, height);
+                    view = createNSOpenGLView(dsi.platformInfo(), pixelFormat, x, y, width, height);
                     MacOSX.caFlush();
                     long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
                     return invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
