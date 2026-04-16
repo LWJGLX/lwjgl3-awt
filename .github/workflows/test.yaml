@@ -52,7 +52,7 @@ jobs:
           java-version: 8
           distribution: 'zulu'
       - name: Download Mesa
-        uses: carlosperate/download-file-action@3ec6fcef61e19eaaa0236a95fbaf333f2baf341e # v2
+        uses: carlosperate/download-file-action@7021d227a45dcf2f828612344b03f6f09a4f7cad # v2
         with:
           file-url: 'https://downloads.fdossena.com/geth.php?r=mesa64-latest'
           file-name: 'mesa64-latest.7z'
