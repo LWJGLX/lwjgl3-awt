@@ -3,9 +3,14 @@ on: [push, pull_request]
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -13,9 +18,15 @@ jobs:
       run: sudo apt-get update
     - name: Install Dependencies
       run: sudo apt-get install -y git openjdk-8-jdk xvfb mesa*
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         persist-credentials: false
+    - name: Cache Maven dependencies
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-maven-
     - name: Build with Maven
       run: |
         export XVFB_WHD="1920x1080x24"
@@ -35,25 +46,27 @@ jobs:
         ./mvnw -B test
     - name: Upload Images
       if: always()
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: images-linux
         path: 'target/*.png'
   test-windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - name: Set up JDK 8
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
           java-version: 8
           distribution: 'zulu'
+          cache: maven
       - name: Download Mesa
-        uses: carlosperate/download-file-action@7021d227a45dcf2f828612344b03f6f09a4f7cad # v2
+        uses: carlosperate/download-file-action@7021d227a45dcf2f828612344b03f6f09a4f7cad # v2.0.3
         with:
           file-url: 'https://downloads.fdossena.com/geth.php?r=mesa64-latest'
           file-name: 'mesa64-latest.7z'
@@ -67,28 +80,30 @@ jobs:
         run: ./mvnw -B test
       - name: Upload Images
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: images-windows
           path: 'target/*.png'
   test-macos:
     runs-on: macos-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - name: Set up JDK 8
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
           java-version: 8
           distribution: 'zulu'
+          cache: maven
       - name: Build with Maven
         run: ./mvnw -B test
       - name: Upload Images
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: images-macos
           path: 'target/*.png'
