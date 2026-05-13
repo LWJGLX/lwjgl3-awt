@@ -111,3 +111,33 @@ jobs:
         with:
           name: images-macos
           path: 'target/*.png'
+      - name: Collect native crash logs
+        if: failure()
+        run: |
+          mkdir -p crash-logs
+          # JVM fatal error logs
+          cp -v hs_err_pid*.log crash-logs/ 2>/dev/null || true
+          cp -v target/hs_err_pid*.log crash-logs/ 2>/dev/null || true
+          # JVM crash replay files
+          cp -v replay_pid*.log crash-logs/ 2>/dev/null || true
+          cp -v target/replay_pid*.log crash-logs/ 2>/dev/null || true
+          # macOS crash reporter writes per-process .ips files here
+          if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
+            cp -rv "$HOME/Library/Logs/DiagnosticReports" crash-logs/user-DiagnosticReports 2>/dev/null || true
+          fi
+          if [ -d /Library/Logs/DiagnosticReports ]; then
+            sudo cp -rv /Library/Logs/DiagnosticReports crash-logs/system-DiagnosticReports 2>/dev/null || true
+          fi
+          # Surefire fork dumps (.dump, .dumpstream, -jvmRun*.dump)
+          if [ -d target/surefire-reports ]; then
+            cp -rv target/surefire-reports crash-logs/surefire-reports 2>/dev/null || true
+          fi
+          echo "collected crash artifacts"
+          ls -laR crash-logs || true
+      - name: Upload crash logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: crash-logs-macos
+          path: 'crash-logs/'
+          if-no-files-found: warn
