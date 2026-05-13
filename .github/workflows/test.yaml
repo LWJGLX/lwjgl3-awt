@@ -34,6 +34,7 @@ jobs:
 
         ./mvnw -B test
     - name: Upload Images
+      if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       with:
         name: images-linux
@@ -65,6 +66,7 @@ jobs:
       - name: Build with Maven
         run: ./mvnw -B test
       - name: Upload Images
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: images-windows
@@ -85,6 +87,7 @@ jobs:
       - name: Build with Maven
         run: ./mvnw -B test
       - name: Upload Images
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: images-macos
