@@ -85,7 +85,11 @@ jobs:
           name: images-windows
           path: 'target/*.png'
   test-macos:
-    runs-on: macos-latest
+    # macos-15 (Sequoia) shows a "bypass window picker" privacy dialog whenever
+    # java.awt.Robot.createScreenCapture is invoked, which contaminates the
+    # screenshot-comparison tests. Stay on macos-14 until the tests are
+    # refactored to not rely on Robot screen capture.
+    runs-on: macos-14
     timeout-minutes: 20
     permissions:
       contents: read
