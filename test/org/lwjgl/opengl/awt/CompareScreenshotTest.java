@@ -62,6 +62,7 @@ public class CompareScreenshotTest {
     void setup(TestInfo testInfo) {
         frame = new JFrame(testInfo.getDisplayName());
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+	frame.setResizable(false);
     }
 
     @AfterEach
@@ -217,6 +218,7 @@ public class CompareScreenshotTest {
         }}, BorderLayout.WEST);
 
         frame.pack();
+	frame.setResizable(false);
         frame.setVisible(true);
         frame.transferFocus();
 
