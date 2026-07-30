@@ -11,10 +11,14 @@ concurrency:
 
 jobs:
   build:
+    name: Build and publish to Maven Central
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
+    # the publishing secrets live in this environment, so only this job can read
+    # them and the environment's protection rules apply to every deployment
+    environment: maven-central
     if: ${{ github.repository_owner == 'LWJGLX' }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -13,12 +13,13 @@ concurrency:
 
 jobs:
   zizmor:
+    name: Analyze workflows
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      security-events: write
+      security-events: write # to upload zizmor's SARIF results to code scanning
       contents: read
-      actions: read
+      actions: read # for the SARIF upload to resolve the triggering workflow run
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -26,3 +27,8 @@ jobs:
           persist-credentials: false
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02 # v0.6.0
+        with:
+          # audit every workflow, action and dependabot config in the repo,
+          # with the strictest persona so informational findings fail too
+          collect: all
+          persona: auditor
