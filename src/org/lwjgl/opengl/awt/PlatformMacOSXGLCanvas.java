@@ -2,7 +2,6 @@ package org.lwjgl.opengl.awt;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
-import org.lwjgl.awt.MacOSX;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
@@ -102,9 +101,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
             if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
                 long layer = invokePPP(view, sel_getUid("layer"), objc_msgSend);
-                invokePPPV(layer, sel_getUid("setHidden:"), e.getChanged().isShowing() ? 0 : 1, objc_msgSend);
-                // flush the new state to the CoreAnimation pipeline, to actually get the new state displayed
-                MacOSX.caFlush();
+                setLayerHiddenOnMainThread(layer, !e.getChanged().isShowing());
             }
         });
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
@@ -207,7 +204,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     pixelFormat = invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"), MemoryUtil.memAddress(attribsArray), objc_msgSend);
 
                     view = createNSOpenGLView(dsi.platformInfo(), pixelFormat, x, y, width, height);
-                    MacOSX.caFlush();
                     long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
                     return invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
                 } finally {
@@ -279,6 +275,29 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 objc_msgSend);
 
         return view;
+    }
+
+    private static void setLayerHiddenOnMainThread(long layer, boolean hidden) {
+        // Core Animation transactions are thread-local. Run the mutation on AppKit's main thread so its
+        // run loop commits the change, instead of explicitly flushing a transaction created on the AWT EDT.
+        long setHidden = sel_getUid("setHidden:");
+        long methodSignature = invokePPPP(layer, sel_getUid("methodSignatureForSelector:"), setHidden, objc_msgSend);
+        long invocation = invokePPPP(objc_getClass("NSInvocation"),
+                sel_getUid("invocationWithMethodSignature:"), methodSignature, objc_msgSend);
+
+        invokePPPV(invocation, sel_getUid("setTarget:"), layer, objc_msgSend);
+        invokePPPV(invocation, sel_getUid("setSelector:"), setHidden, objc_msgSend);
+
+        ByteBuffer hiddenValue = BufferUtils.createByteBuffer(1);
+        hiddenValue.put(0, hidden ? (byte) 1 : 0);
+        JNI.callPPPPV(invocation, sel_getUid("setArgument:atIndex:"), memAddress(hiddenValue), 2, objc_msgSend);
+
+        JNI.callPPPPV(invocation,
+                sel_getUid("performSelectorOnMainThread:withObject:waitUntilDone:"),
+                sel_getUid("invoke"),
+                MemoryUtil.NULL,
+                ObjCRuntime.YES,
+                objc_msgSend);
     }
 
     private static long NSOpenGLView_initWithFrame(long nsopenglView, double x, double y, double width, double height, long pixelFormat) {
