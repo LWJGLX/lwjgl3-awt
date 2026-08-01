@@ -98,7 +98,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
-        this.ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         this.canvas = canvas;
         if (!hierarchyListenerAdded) {
             canvas.addHierarchyListener(e -> {
@@ -433,22 +432,35 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     @Override
     public void lock() throws AWTException {
+        JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+        if (ds == null) {
+            throw new AWTException("Failed to get JAWT drawing surface");
+        }
         int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
-        if ((lock & JAWT_LOCK_ERROR) != 0)
+        if ((lock & JAWT_LOCK_ERROR) != 0) {
+            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
             throw new AWTException("JAWT_DrawingSurface_Lock() failed");
+        }
+        this.ds = ds;
     }
 
     @Override
-    public void unlock() {
-        JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+    public void unlock() throws AWTException {
+        JAWTDrawingSurface ds = this.ds;
+        if (ds == null) {
+            throw new AWTException("JAWT drawing surface is not locked");
+        }
+        try {
+            JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+        } finally {
+            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
+            this.ds = null;
+        }
     }
 
     @Override
     public void dispose() {
-        if (this.ds != null) {
-            JAWT_FreeDrawingSurface(this.ds, awt.FreeDrawingSurface());
-            this.ds = null;
-        }
+        canvas = null;
     }
 
 }

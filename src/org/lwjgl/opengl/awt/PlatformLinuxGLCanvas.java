@@ -49,6 +49,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	public long display;
 	public long drawable;
 	public JAWTDrawingSurface ds;
+	private Canvas canvas;
 
 	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
 		int screen = X11.XDefaultScreen(display);
@@ -97,20 +98,38 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public void lock() throws AWTException {
+		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+		if (ds == null) {
+			throw new AWTException("Failed to get JAWT drawing surface");
+		}
 		int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
-		if ((lock & JAWT_LOCK_ERROR) != 0)
+		if ((lock & JAWT_LOCK_ERROR) != 0) {
+			JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
 			throw new AWTException("JAWT_DrawingSurface_Lock() failed");
+		}
+		this.ds = ds;
 	}
 
 	public void unlock() throws AWTException {
-		JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+		JAWTDrawingSurface ds = this.ds;
+		if (ds == null) {
+			throw new AWTException("JAWT drawing surface is not locked");
+		}
+		try {
+			JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+		} finally {
+			JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
+			this.ds = null;
+		}
 	}
 
 	public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
-		this.ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+		this.canvas = canvas;
 		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
 		try {
-			lock();
+			int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
+			if ((lock & JAWT_LOCK_ERROR) != 0)
+				throw new AWTException("JAWT_DrawingSurface_Lock() failed");
 			try {
 				JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
 				try {
@@ -123,7 +142,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 					JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
 				}
 			} finally {
-				unlock();
+				JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
 			}
 		} finally {
 			JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
@@ -155,10 +174,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public void dispose() {
-		if (this.ds != null) {
-			JAWT_FreeDrawingSurface(this.ds, awt.FreeDrawingSurface());
-			this.ds = null;
-		}
+		canvas = null;
 	}
 
 	private static void verifyGLXCapabilities(long display, int screen, GLData data) throws AWTException {

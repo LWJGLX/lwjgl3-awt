@@ -74,6 +74,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     public long wglDelayBeforeSwapNVAddr = 0L;
     public boolean wglDelayBeforeSwapNVAddr_set = false;
     public JAWTDrawingSurface ds;
+    private Canvas canvas;
 
     /**
      * Encode the pixel format attributes stored in the given {@link GLData} into the given {@link IntBuffer} for wglChoosePixelFormatARB to consume.
@@ -139,7 +140,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
-        this.ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+        this.canvas = canvas;
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
             int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
@@ -802,20 +803,35 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
     @Override
     public void lock() throws AWTException {
+        JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+        if (ds == null) {
+            throw new AWTException("Failed to get JAWT drawing surface");
+        }
         int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
-        if ((lock & JAWT_LOCK_ERROR) != 0)
+        if ((lock & JAWT_LOCK_ERROR) != 0) {
+            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
             throw new AWTException("JAWT_DrawingSurface_Lock() failed");
+        }
+        this.ds = ds;
     }
 
     @Override
     public void unlock() throws AWTException {
-        JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+        JAWTDrawingSurface ds = this.ds;
+        if (ds == null) {
+            throw new AWTException("JAWT drawing surface is not locked");
+        }
+        try {
+            JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+        } finally {
+            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
+            this.ds = null;
+        }
     }
 
     @Override
     public void dispose() {
-        JAWT_FreeDrawingSurface(this.ds, awt.FreeDrawingSurface());
-        this.ds = null;
+        canvas = null;
     }
 
 }
