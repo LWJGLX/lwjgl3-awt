@@ -15,7 +15,20 @@ public interface PlatformGLCanvas {
     boolean isCurrent(long context);
     boolean swapBuffers();
     boolean delayBeforeSwapNV(float seconds);
+
+    /**
+     * Acquires and locks a JAWT drawing surface for the current render operation.
+     */
     void lock() throws AWTException;
+
+    /**
+     * Unlocks and frees the JAWT drawing surface acquired by {@link #lock()}.
+     * This must be called on the same thread as {@code lock()}.
+     */
     void unlock() throws AWTException;
+
+    /**
+     * Releases platform resources that outlive a drawing-surface lock cycle.
+     */
     void dispose();
 }

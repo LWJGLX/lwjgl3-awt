@@ -59,7 +59,7 @@ public abstract class AWTGLCanvas extends Canvas {
     }
 
     /**
-     * Deletes the OpenGL context and releases the platform drawing surface.
+     * Deletes the OpenGL context and releases platform-specific canvas resources.
      *
      * <p>This method must not run concurrently with rendering. Applications that render on a dedicated thread should
      * override it to arrange cleanup on that thread.</p>
