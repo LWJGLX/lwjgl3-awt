@@ -92,6 +92,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     public JAWTDrawingSurface ds;
     private Canvas canvas;
     private long view;
+    private long interLayer;
     private boolean hierarchyListenerAdded;
     private int width;
     private int height;
@@ -109,6 +110,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             });
             hierarchyListenerAdded = true;
         }
+        long context;
+        long surfaceLayer;
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
             int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
@@ -208,9 +211,12 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
                     pixelFormat = invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"), MemoryUtil.memAddress(attribsArray), objc_msgSend);
 
-                    view = createNSOpenGLView(dsi.platformInfo(), pixelFormat, x, y, width, height);
+                    view = createNSOpenGLView(pixelFormat, x, y, width, height);
+                    // The surface layer belongs to the peer view rather than to the drawing surface info, but
+                    // retain it anyway so it stays alive until the layer has been attached below.
+                    surfaceLayer = invokePPP(dsi.platformInfo(), sel_getUid("retain"), objc_msgSend);
                     long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
-                    return invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
+                    context = invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
                 } finally {
                     JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
                 }
@@ -220,9 +226,31 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         } finally {
             JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
         }
+
+        try {
+            attachSurfaceLayer(surfaceLayer, interLayer);
+        } finally {
+            invokePPP(surfaceLayer, sel_getUid("release"), objc_msgSend);
+        }
+        return context;
     }
 
-    private long createNSOpenGLView(long platformInfo, long pixelFormat, int x, int y, int width, int height) {
+    /**
+     * Hands the view's layer tree to the JAWT surface layer on AppKit's main thread.
+     *
+     * <p>This waits for AppKit to run the selector, so it must not be called while the JAWT drawing surface is
+     * locked: AppKit takes that same lock, so waiting for it here would deadlock the two threads.</p>
+     */
+    private static void attachSurfaceLayer(long surfaceLayer, long layer) {
+        JNI.callPPPPV(surfaceLayer,
+                ObjCRuntime.sel_getUid("performSelectorOnMainThread:withObject:waitUntilDone:"),
+                ObjCRuntime.sel_getUid("setLayer:"),
+                layer,
+                ObjCRuntime.YES,
+                objc_msgSend);
+    }
+
+    private long createNSOpenGLView(long pixelFormat, int x, int y, int width, int height) {
         long objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
 
         // NSOpenGLView *nsOpenGLView = [NSOpenGLView alloc];
@@ -256,7 +284,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
         // create intermediate layer and set its frame
         // CALayer *interLayer = [CALayer layer];
-		long interLayer = JNI.invokePPP(
+		interLayer = JNI.invokePPP(
                 ObjCRuntime.objc_getClass("CALayer"),
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
@@ -271,13 +299,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 openglViewLayer,
                 objc_msgSend);
 
-        // set intermediate layer as JAWTSurfaceLayer's layer
-        JNI.callPPPPV(platformInfo,
-                ObjCRuntime.sel_getUid("performSelectorOnMainThread:withObject:waitUntilDone:"),
-                ObjCRuntime.sel_getUid("setLayer:"),
-                interLayer,
-                ObjCRuntime.YES,
-                objc_msgSend);
+        // the intermediate layer is handed to the JAWTSurfaceLayer by the caller, once it has released the
+        // drawing surface lock
 
         return view;
     }
