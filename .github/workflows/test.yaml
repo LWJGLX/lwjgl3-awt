@@ -84,14 +84,19 @@ jobs:
           }
           7z x "$archive" "-o$extracted" 'x64\opengl32.dll' 'x64\libgallium_wgl.dll' 'x64\dxil.dll'
           # System32 is owned by TrustedInstaller, so deploy per-application instead: the loader
-          # searches the directory of the running executable (java.exe) before System32.
-          $target = Join-Path $env:JAVA_HOME 'bin'
-          foreach ($dll in @('opengl32.dll', 'libgallium_wgl.dll', 'dxil.dll')) {
-            $source = Join-Path $extracted "x64\$dll"
-            if (-not (Test-Path $source)) { throw "Mesa archive did not contain x64\$dll" }
-            Copy-Item $source -Destination $target -Force
+          # searches the directory of the running executable before System32. Surefire forks
+          # ${java.home}/bin/java, which on JDK 8 is the jre subdirectory, so cover every java.exe.
+          $targets = @(Get-ChildItem -Path $env:JAVA_HOME -Recurse -Depth 2 -Filter 'java.exe' |
+            Select-Object -ExpandProperty DirectoryName -Unique)
+          if ($targets.Count -eq 0) { throw "No java.exe found under $env:JAVA_HOME" }
+          foreach ($target in $targets) {
+            foreach ($dll in @('opengl32.dll', 'libgallium_wgl.dll', 'dxil.dll')) {
+              $source = Join-Path $extracted "x64\$dll"
+              if (-not (Test-Path $source)) { throw "Mesa archive did not contain x64\$dll" }
+              Copy-Item $source -Destination $target -Force
+            }
+            Write-Host "Deployed Mesa to $target"
           }
-          Get-ChildItem $target -Filter '*gl*.dll' | Format-Table Name, Length
       - name: Build with Maven
         run: ./mvnw -B test
         env:
