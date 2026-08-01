@@ -67,7 +67,7 @@ jobs:
           java-version: 8
           distribution: 'zulu'
           cache: maven
-      - name: Install Mesa next to the JDK
+      - name: Register Mesa as the OpenGL driver
         shell: pwsh
         env:
           MESA_VERSION: '26.1.4'
@@ -82,21 +82,21 @@ jobs:
           if ($hash -ne $env:MESA_SHA256.ToUpper()) {
             throw "Mesa checksum mismatch: expected $env:MESA_SHA256, got $hash"
           }
-          7z x "$archive" "-o$extracted" 'x64\opengl32.dll' 'x64\libgallium_wgl.dll' 'x64\dxil.dll'
-          # System32 is owned by TrustedInstaller, so deploy per-application instead: the loader
-          # searches the directory of the running executable before System32. Surefire forks
-          # ${java.home}/bin/java, which on JDK 8 is the jre subdirectory, so cover every java.exe.
-          $targets = @(Get-ChildItem -Path $env:JAVA_HOME -Recurse -Depth 2 -Filter 'java.exe' |
-            Select-Object -ExpandProperty DirectoryName -Unique)
-          if ($targets.Count -eq 0) { throw "No java.exe found under $env:JAVA_HOME" }
-          foreach ($target in $targets) {
-            foreach ($dll in @('opengl32.dll', 'libgallium_wgl.dll', 'dxil.dll')) {
-              $source = Join-Path $extracted "x64\$dll"
-              if (-not (Test-Path $source)) { throw "Mesa archive did not contain x64\$dll" }
-              Copy-Item $source -Destination $target -Force
-            }
-            Write-Host "Deployed Mesa to $target"
-          }
+          7z x "$archive" "-o$extracted" 'x64\libgallium_wgl.dll' 'x64\dxil.dll'
+          # This mirrors Mesa's own systemwidedeploy.cmd: rather than overwriting the
+          # TrustedInstaller-owned opengl32.dll, install the Gallium driver as mesadrv.dll and let
+          # the system opengl32.dll load it as the MSOGL installable client driver.
+          $system32 = Join-Path $env:SystemRoot 'System32'
+          Copy-Item (Join-Path $extracted 'x64\libgallium_wgl.dll') (Join-Path $system32 'mesadrv.dll') -Force
+          Copy-Item (Join-Path $extracted 'x64\dxil.dll') $system32 -Force
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\MSOGL'
+          New-Item -Path $key -Force | Out-Null
+          Set-ItemProperty -Path $key -Name 'DLL' -Value 'mesadrv.dll' -Type String
+          Set-ItemProperty -Path $key -Name 'DriverVersion' -Value 1 -Type DWord
+          Set-ItemProperty -Path $key -Name 'Flags' -Value 1 -Type DWord
+          Set-ItemProperty -Path $key -Name 'Version' -Value 2 -Type DWord
+          Get-Item (Join-Path $system32 'mesadrv.dll') | Format-Table Name, Length
+          Get-ItemProperty -Path $key | Format-List DLL, DriverVersion, Flags, Version
       - name: Build with Maven
         run: ./mvnw -B test
         env:
