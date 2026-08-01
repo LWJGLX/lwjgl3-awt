@@ -92,6 +92,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     public JAWTDrawingSurface ds;
     private Canvas canvas;
     private long view;
+    private boolean hierarchyListenerAdded;
     private int width;
     private int height;
 
@@ -99,13 +100,16 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
         this.ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         this.canvas = canvas;
-        canvas.addHierarchyListener(e -> {
-            // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
-            if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
-                long layer = invokePPP(view, sel_getUid("layer"), objc_msgSend);
-                setLayerHiddenOnMainThread(layer, !e.getChanged().isShowing());
-            }
-        });
+        if (!hierarchyListenerAdded) {
+            canvas.addHierarchyListener(e -> {
+                // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
+                if (view != 0L && (e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
+                    long layer = invokePPP(view, sel_getUid("layer"), objc_msgSend);
+                    setLayerHiddenOnMainThread(layer, !e.getChanged().isShowing());
+                }
+            });
+            hierarchyListenerAdded = true;
+        }
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
             int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
@@ -387,7 +391,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         invokePPP(view, sel_getUid("removeFromSuperviewWithoutNeedingDisplay"), objc_msgSend);
         invokePPP(view, sel_getUid("clearGLContext"), objc_msgSend);
         invokePPP(view, sel_getUid("release"), objc_msgSend);
-        return false;
+        view = 0L;
+        return true;
     }
 
     @Override
