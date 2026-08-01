@@ -131,7 +131,8 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public boolean deleteContext(long context) {
-		return false;
+		glXDestroyContext(display, context);
+		return true;
 	}
 
 	public boolean makeCurrent(long context) {

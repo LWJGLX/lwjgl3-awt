@@ -50,9 +50,6 @@ public abstract class AWTGLCanvas extends Canvas {
     @Override
     public void removeNotify() {
         super.removeNotify();
-        // prepare for a possible re-adding
-        context = 0;
-        initCalled = false;
         disposeCanvas();
     }
 
@@ -61,8 +58,23 @@ public abstract class AWTGLCanvas extends Canvas {
         super.addComponentListener(l);
     }
 
+    /**
+     * Deletes the OpenGL context and releases the platform drawing surface.
+     *
+     * <p>This method must not run concurrently with rendering. Applications that render on a dedicated thread should
+     * override it to arrange cleanup on that thread.</p>
+     */
     public void disposeCanvas() {
-        this.platformCanvas.dispose();
+        try {
+            if (context != 0L) {
+                platformCanvas.deleteContext(context);
+            }
+        } finally {
+            // prepare for a possible re-adding
+            context = 0L;
+            initCalled = false;
+            platformCanvas.dispose();
+        }
     }
     protected AWTGLCanvas(GLData data) {
         this.data = data;
