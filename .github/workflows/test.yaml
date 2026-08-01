@@ -67,7 +67,7 @@ jobs:
           java-version: 8
           distribution: 'zulu'
           cache: maven
-      - name: Overwrite opengl32.dll with Mesa
+      - name: Install Mesa next to the JDK
         shell: pwsh
         env:
           MESA_VERSION: '26.1.4'
@@ -83,7 +83,15 @@ jobs:
             throw "Mesa checksum mismatch: expected $env:MESA_SHA256, got $hash"
           }
           7z x "$archive" "-o$extracted" 'x64\opengl32.dll' 'x64\libgallium_wgl.dll' 'x64\dxil.dll'
-          Copy-Item (Join-Path $extracted 'x64\*.dll') -Destination "$env:SystemRoot\System32\" -Force
+          # System32 is owned by TrustedInstaller, so deploy per-application instead: the loader
+          # searches the directory of the running executable (java.exe) before System32.
+          $target = Join-Path $env:JAVA_HOME 'bin'
+          foreach ($dll in @('opengl32.dll', 'libgallium_wgl.dll', 'dxil.dll')) {
+            $source = Join-Path $extracted "x64\$dll"
+            if (-not (Test-Path $source)) { throw "Mesa archive did not contain x64\$dll" }
+            Copy-Item $source -Destination $target -Force
+          }
+          Get-ChildItem $target -Filter '*gl*.dll' | Format-Table Name, Length
       - name: Build with Maven
         run: ./mvnw -B test
         env:
