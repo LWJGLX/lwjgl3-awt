@@ -67,19 +67,28 @@ jobs:
           java-version: 8
           distribution: 'zulu'
           cache: maven
-      - name: Download Mesa
-        uses: carlosperate/download-file-action@7021d227a45dcf2f828612344b03f6f09a4f7cad # v2.0.3
-        with:
-          file-url: 'https://downloads.fdossena.com/geth.php?r=mesa64-latest'
-          file-name: 'mesa64-latest.7z'
-          location: '.'
       - name: Overwrite opengl32.dll with Mesa
-        uses: DuckSoft/extract-7z-action@6eaaa506b410f047eaa9b22498696aad1e19a834 # v1.0
-        with:
-          pathSource: mesa64-latest.7z
-          pathTarget: C:\WINDOWS\SYSTEM32\
+        shell: pwsh
+        env:
+          MESA_VERSION: '26.1.4'
+          MESA_SHA256: '3804c66059c17b7ce12ca8596782585547e20c2185938f89663ec7b807ef0a84'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
+          $extracted = Join-Path $env:RUNNER_TEMP 'mesa'
+          $url = "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
+          curl.exe --fail --location --retry 5 --retry-all-errors --retry-delay 10 --output "$archive" "$url"
+          $hash = (Get-FileHash "$archive" -Algorithm SHA256).Hash
+          if ($hash -ne $env:MESA_SHA256.ToUpper()) {
+            throw "Mesa checksum mismatch: expected $env:MESA_SHA256, got $hash"
+          }
+          7z x "$archive" "-o$extracted" 'x64\opengl32.dll' 'x64\libgallium_wgl.dll' 'x64\dxil.dll'
+          Copy-Item (Join-Path $extracted 'x64\*.dll') -Destination "$env:SystemRoot\System32\" -Force
       - name: Build with Maven
         run: ./mvnw -B test
+        env:
+          GALLIUM_DRIVER: llvmpipe
+          LIBGL_ALWAYS_SOFTWARE: '1'
       - name: Upload Images
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
