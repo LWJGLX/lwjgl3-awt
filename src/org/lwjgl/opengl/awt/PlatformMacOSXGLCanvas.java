@@ -3,11 +3,13 @@ package org.lwjgl.opengl.awt;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.JNI;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.libffi.FFICIF;
+import org.lwjgl.system.libffi.FFIType;
 import org.lwjgl.system.macosx.ObjCRuntime;
 
 import javax.swing.*;
@@ -301,132 +303,76 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     }
 
     private static long NSOpenGLView_initWithFrame(long nsopenglView, double x, double y, double width, double height, long pixelFormat) {
-        // Prepare the call interface
-        FFICIF cif = FFICIF.malloc();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            FFIType cgRect = createCGRectType(stack);
+            PointerBuffer argumentTypes = stack.pointers(
+                    ffi_type_pointer.address(), // NSOpenGLView*
+                    ffi_type_pointer.address(), // initWithFrame:pixelFormat:
+                    cgRect.address(),            // CGRect
+                    ffi_type_pointer.address()); // pixelFormat*
 
-        PointerBuffer argumentTypes = BufferUtils.createPointerBuffer(7) // 4 arguments, one of them an array of 4 doubles
-                .put(0, ffi_type_pointer) // NSOpenGLView*
-                .put(1, ffi_type_pointer) // initWithFrame:pixelFormat:
-                .put(2, ffi_type_double) // CGRect
-                .put(3, ffi_type_double) // CGRect
-                .put(4, ffi_type_double) // CGRect
-                .put(5, ffi_type_double) // CGRect
-                .put(6, ffi_type_pointer); // pixelFormat*
+            FFICIF cif = FFICIF.malloc(stack);
+            int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_pointer, argumentTypes);
+            if (status != FFI_OK) {
+                throw new IllegalStateException("ffi_prep_cif failed: " + status);
+            }
 
-        int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_pointer, argumentTypes);
-        if (status != FFI_OK) {
-            throw new IllegalStateException("ffi_prep_cif failed: " + status);
+            DoubleBuffer frame = stack.doubles(x, y, width, height);
+            PointerBuffer pointerValues = stack.pointers(
+                    nsopenglView,
+                    ObjCRuntime.sel_getUid("initWithFrame:pixelFormat:"),
+                    pixelFormat);
+            PointerBuffer arguments = stack.pointers(
+                    memAddress(pointerValues, 0),
+                    memAddress(pointerValues, 1),
+                    memAddress(frame),
+                    memAddress(pointerValues, 2));
+
+            ByteBuffer view = stack.malloc(POINTER_SIZE);
+            ffi_call(cif, objc_msgSend, view, arguments);
+
+            long result = PointerBuffer.get(view, 0);
+            if (result == 0L) {
+                throw new IllegalStateException("[NSOpenGLView initWithFrame:pixelFormat:] returned null.");
+            }
+            return result;
         }
-
-        // An array of pointers that point to the actual argument values.
-        PointerBuffer arguments = BufferUtils.createPointerBuffer(7);
-
-        // Storage for the actual argument values.
-        ByteBuffer values = BufferUtils.createByteBuffer(
-                POINTER_SIZE +  // MTKView*
-                        POINTER_SIZE +  // initWithFrame*
-                        4*8 +           // CGRect
-                        POINTER_SIZE    // pixelFormat*
-        );
-
-        // Setup the argument buffers
-        {
-            // MTKView*
-            arguments.put(memAddress(values));
-            PointerBuffer.put(values, nsopenglView);
-
-            // initWithFrame*
-            arguments.put(memAddress(values));
-            PointerBuffer.put(values, ObjCRuntime.sel_getUid("initWithFrame:pixelFormat:"));
-
-            // frame
-            arguments.put(memAddress(values));
-            values.putDouble(x);
-            arguments.put(memAddress(values));
-            values.putDouble(y);
-            arguments.put(memAddress(values));
-            values.putDouble(width);
-            arguments.put(memAddress(values));
-            values.putDouble(height);
-
-            // pixelFormat*
-            arguments.put(memAddress(values));
-            values.putLong(pixelFormat);
-        }
-        arguments.flip();
-        values.flip();
-
-        // Invoke the function and validate
-        ByteBuffer view = BufferUtils.createByteBuffer(8);
-        ffi_call(cif, objc_msgSend, view, arguments);
-        cif.free();
-
-        final long v = view.asLongBuffer().get(0);
-        if(v == 0L) {
-            throw new IllegalStateException("[NSOpenGLView initWithFrame:pixelFormat:] returned null.");
-        }
-
-        return v;
     }
 
     private static void setOpenglViewLayersFrame(long openglViewLayer, double[] frame) {
-        // Prepare the call interface
-        FFICIF cif = FFICIF.malloc();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            FFIType cgRect = createCGRectType(stack);
+            PointerBuffer argumentTypes = stack.pointers(
+                    ffi_type_pointer.address(), // CALayer*
+                    ffi_type_pointer.address(), // setFrame:
+                    cgRect.address());           // CGRect
 
-        PointerBuffer argumentTypes = BufferUtils.createPointerBuffer(6) // 3 arguments, one of them an array of 4 doubles
-                .put(0, ffi_type_pointer) // openglViewLayer*
-                .put(1, ffi_type_pointer) // setFrame:
-                .put(2, ffi_type_double) // CGRect
-                .put(3, ffi_type_double) // CGRect
-                .put(4, ffi_type_double) // CGRect
-                .put(5, ffi_type_double); // CGRect
+            FFICIF cif = FFICIF.malloc(stack);
+            int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_void, argumentTypes);
+            if (status != FFI_OK) {
+                throw new IllegalStateException("ffi_prep_cif failed: " + status);
+            }
 
-        int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_pointer, argumentTypes);
-        if (status != FFI_OK) {
-            throw new IllegalStateException("ffi_prep_cif failed: " + status);
+            DoubleBuffer frameValue = stack.doubles(frame[0], frame[1], frame[2], frame[3]);
+            PointerBuffer pointerValues = stack.pointers(openglViewLayer, ObjCRuntime.sel_getUid("setFrame:"));
+            PointerBuffer arguments = stack.pointers(
+                    memAddress(pointerValues, 0),
+                    memAddress(pointerValues, 1),
+                    memAddress(frameValue));
+
+            ffi_call(cif, objc_msgSend, null, arguments);
         }
+    }
 
-        // An array of pointers that point to the actual argument values.
-        PointerBuffer arguments = BufferUtils.createPointerBuffer(7);
-
-        // Storage for the actual argument values.
-        ByteBuffer values = BufferUtils.createByteBuffer(
-                POINTER_SIZE +  // MTKView*
-                POINTER_SIZE +  // initWithFrame*
-                4 * 8           // CGRect
-        );
-
-        // The memory we'll modify using libffi
-        DoubleBuffer target = BufferUtils.createDoubleBuffer(4);
-        target.put(frame, 0, 4);
-
-        // Set up the argument buffers
-        {
-            // openglViewLayer*
-            arguments.put(memAddress(values));
-            PointerBuffer.put(values, openglViewLayer);
-
-            // setFrame*
-            arguments.put(memAddress(values));
-            PointerBuffer.put(values, ObjCRuntime.sel_getUid("setFrame:"));
-
-            // frame
-            arguments.put(memAddress(values));
-            values.putDouble(frame[0]);
-            arguments.put(memAddress(values));
-            values.putDouble(frame[1]);
-            arguments.put(memAddress(values));
-            values.putDouble(frame[2]);
-            arguments.put(memAddress(values));
-            values.putDouble(frame[3]);
-        }
-        arguments.flip();
-        values.flip();
-
-        // Invoke the function and validate
-        ByteBuffer view = BufferUtils.createByteBuffer(8);
-        ffi_call(cif, ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend"), view, arguments);
-        cif.free();
+    private static FFIType createCGRectType(MemoryStack stack) {
+        PointerBuffer elements = stack.mallocPointer(5);
+        elements.put(ffi_type_double.address());
+        elements.put(ffi_type_double.address());
+        elements.put(ffi_type_double.address());
+        elements.put(ffi_type_double.address());
+        elements.put(MemoryUtil.NULL);
+        elements.flip();
+        return FFIType.calloc(stack).type(FFI_TYPE_STRUCT).elements(elements);
     }
 
     @Override
