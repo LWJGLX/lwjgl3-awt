@@ -291,6 +291,11 @@
 			<plugin>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<version>${maven-surefire-plugin.version}</version>
+				<configuration>
+					<!-- A windowing deadlock would otherwise hang until the CI job times out. Fail fast
+					     instead: surefire dumps the forked VM's stack traces when this elapses. -->
+					<forkedProcessTimeoutInSeconds>180</forkedProcessTimeoutInSeconds>
+				</configuration>
 			</plugin>
 			<plugin>
 				<artifactId>maven-jar-plugin</artifactId>
