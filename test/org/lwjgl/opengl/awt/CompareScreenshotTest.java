@@ -10,11 +10,10 @@ import javax.swing.UnsupportedLookAndFeelException;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
-import java.awt.Insets;
 import java.awt.Point;
-import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -217,8 +216,8 @@ public class CompareScreenshotTest {
         frame.transferFocus();
     }
 
-    private void compareWithScreenshot(TestInfo testInfo, Window window, AWTGLCanvas... canvases) throws IOException {
-        BufferedImage background = captureWindow(window, canvases);
+    private void compareWithScreenshot(TestInfo testInfo, JFrame frame, AWTGLCanvas... canvases) throws IOException {
+        BufferedImage background = captureContentPane(frame, canvases);
 
         String screenShotSuffix = "";
         int screenShotIndex = screenShotIndexMap.compute(testInfo, (info, index) -> index == null ? 1 : index + 1);
@@ -250,7 +249,7 @@ public class CompareScreenshotTest {
                 imageComparison.compareImages().getImageComparisonState());
     }
 
-    private BufferedImage captureWindow(Window window, AWTGLCanvas... canvases) throws IOException {
+    private BufferedImage captureContentPane(JFrame frame, AWTGLCanvas... canvases) throws IOException {
         BufferedImage[] result = new BufferedImage[1];
         Runnable capture = () -> {
             Map<AWTGLCanvas, BufferedImage> canvasImages = new HashMap<>();
@@ -261,22 +260,20 @@ public class CompareScreenshotTest {
                 canvasImages.put(canvas, ((DemoCanvas) canvas).renderAndCaptureFramebuffer());
             }
 
-            Insets insets = window.getInsets();
-            int width = window.getWidth() - insets.left - insets.right;
-            int height = window.getHeight() - insets.top - insets.bottom;
+            Container contentPane = frame.getContentPane();
+            int width = contentPane.getWidth();
+            int height = contentPane.getHeight();
             BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
             Graphics2D graphics = image.createGraphics();
             try {
-                graphics.translate(-insets.left, -insets.top);
-                window.printAll(graphics);
-                graphics.translate(insets.left, insets.top);
+                contentPane.printAll(graphics);
 
                 for (Map.Entry<AWTGLCanvas, BufferedImage> entry : canvasImages.entrySet()) {
                     AWTGLCanvas canvas = entry.getKey();
-                    Point location = SwingUtilities.convertPoint(canvas, 0, 0, window);
+                    Point location = SwingUtilities.convertPoint(canvas, 0, 0, contentPane);
                     graphics.drawImage(entry.getValue(),
-                            location.x - insets.left,
-                            location.y - insets.top,
+                            location.x,
+                            location.y,
                             canvas.getWidth(),
                             canvas.getHeight(),
                             null);
