@@ -53,6 +53,44 @@ class AWTGLCanvasLifecycleTest {
         assertEquals(Arrays.asList("dispose"), platform.calls);
     }
 
+    @Test
+    void renderKeepsContextOperationsInsideDrawingSurfaceLock() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            public void initGL() {
+                platform.calls.add("init");
+            }
+
+            @Override
+            public void paintGL() {
+                platform.calls.add("paint");
+                swapBuffers();
+            }
+        };
+
+        canvas.render();
+
+        assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "init", "paint",
+                "swapBuffers", "makeCurrent:0", "unlock"), platform.calls);
+    }
+
+    @Test
+    void renderUnlocksDrawingSurfaceWhenPaintingFails() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            public void paintGL() {
+                throw new IllegalStateException("paint failed");
+            }
+        };
+
+        assertThrows(IllegalStateException.class, canvas::render);
+
+        assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "makeCurrent:0", "unlock"),
+                platform.calls);
+    }
+
     private static class TestCanvas extends AWTGLCanvas {
         TestCanvas(PlatformGLCanvas platformCanvas) {
             this.platformCanvas = platformCanvas;
@@ -73,6 +111,7 @@ class AWTGLCanvasLifecycleTest {
 
         @Override
         public long create(Canvas canvas, GLData data, GLData effective) {
+            calls.add("create");
             return 42L;
         }
 
@@ -87,6 +126,7 @@ class AWTGLCanvasLifecycleTest {
 
         @Override
         public boolean makeCurrent(long context) {
+            calls.add("makeCurrent:" + context);
             return true;
         }
 
@@ -97,6 +137,7 @@ class AWTGLCanvasLifecycleTest {
 
         @Override
         public boolean swapBuffers() {
+            calls.add("swapBuffers");
             return true;
         }
 
@@ -107,10 +148,12 @@ class AWTGLCanvasLifecycleTest {
 
         @Override
         public void lock() throws AWTException {
+            calls.add("lock");
         }
 
         @Override
         public void unlock() throws AWTException {
+            calls.add("unlock");
         }
 
         @Override

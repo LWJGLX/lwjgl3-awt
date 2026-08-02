@@ -74,7 +74,21 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     public long wglDelayBeforeSwapNVAddr = 0L;
     public boolean wglDelayBeforeSwapNVAddr_set = false;
     public JAWTDrawingSurface ds;
+    private JAWTDrawingSurfaceInfo dsi;
+    private long hdc;
+    private int pixelFormat;
+    private Thread drawingSurfaceThread;
     private Canvas canvas;
+
+    private static final class ContextInfo {
+        final long context;
+        final int pixelFormat;
+
+        ContextInfo(long context, int pixelFormat) {
+            this.context = context;
+            this.pixelFormat = pixelFormat;
+        }
+    }
 
     /**
      * Encode the pixel format attributes stored in the given {@link GLData} into the given {@link IntBuffer} for wglChoosePixelFormatARB to consume.
@@ -142,19 +156,30 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
         this.canvas = canvas;
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+        if (ds == null) {
+            throw new AWTException("Failed to get JAWT drawing surface");
+        }
         try {
             int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
             if ((lock & JAWT_LOCK_ERROR) != 0)
                 throw new AWTException("JAWT_DrawingSurface_Lock() failed");
             try {
                 JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+                if (dsi == null) {
+                    throw new AWTException("Failed to get JAWT drawing surface info");
+                }
                 try {
                     JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
                     this.hwnd = dsiWin.hwnd();
                     try (MemoryStack stack = stackPush()) {
                         long hwndDummy = createDummyWindow(stack);
+                        if (hwndDummy == 0L) {
+                            throw new AWTException("Failed to create dummy window");
+                        }
                         try {
-                            return create(stack, hwnd, hwndDummy, attribs, effective);
+                            ContextInfo result = create(stack, dsiWin.hdc(), hwndDummy, attribs, effective);
+                            this.pixelFormat = result.pixelFormat;
+                            return result.context;
                         } finally {
                             DestroyWindow(null, hwndDummy);
                         }
@@ -170,191 +195,135 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         }
     }
 
-    private static long create(MemoryStack stack, long windowHandle, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
-        long bufferAddr = stack.nmalloc(4, (4*2) << 2);
+    private static ContextInfo create(MemoryStack stack, long hDC, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
+        long bufferAddr = stack.nmalloc(4, (4 * 2) << 2);
 
-        // Validate context attributes
         validateAttributes(attribs);
 
-        // Find this exact pixel format, though for now without multisampling. This comes later!
         int flags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL;
         if (attribs.doubleBuffer)
             flags |= PFD_DOUBLEBUFFER;
         if (attribs.stereo)
             flags |= PFD_STEREO;
         PIXELFORMATDESCRIPTOR pfd = PIXELFORMATDESCRIPTOR.calloc(stack)
-            .nSize((short) PIXELFORMATDESCRIPTOR.SIZEOF)
-            .nVersion((short) 1) // this should always be 1
-            .dwLayerMask(PFD_MAIN_PLANE)
-            .iPixelType(PFD_TYPE_RGBA)
-            .dwFlags(flags)
-            .cRedBits((byte) attribs.redSize)
-            .cGreenBits((byte) attribs.greenSize)
-            .cBlueBits((byte) attribs.blueSize)
-            .cAlphaBits((byte) attribs.alphaSize)
-            .cDepthBits((byte) attribs.depthSize)
-            .cStencilBits((byte) attribs.stencilSize)
-            .cAccumRedBits((byte) attribs.accumRedSize)
-            .cAccumGreenBits((byte) attribs.accumGreenSize)
-            .cAccumBlueBits((byte) attribs.accumBlueSize)
-            .cAccumAlphaBits((byte) attribs.accumAlphaSize)
-            .cAccumBits((byte) (attribs.accumRedSize + attribs.accumGreenSize + attribs.accumBlueSize + attribs.accumAlphaSize));
+                .nSize((short) PIXELFORMATDESCRIPTOR.SIZEOF)
+                .nVersion((short) 1)
+                .dwLayerMask(PFD_MAIN_PLANE)
+                .iPixelType(PFD_TYPE_RGBA)
+                .dwFlags(flags)
+                .cRedBits((byte) attribs.redSize)
+                .cGreenBits((byte) attribs.greenSize)
+                .cBlueBits((byte) attribs.blueSize)
+                .cAlphaBits((byte) attribs.alphaSize)
+                .cDepthBits((byte) attribs.depthSize)
+                .cStencilBits((byte) attribs.stencilSize)
+                .cAccumRedBits((byte) attribs.accumRedSize)
+                .cAccumGreenBits((byte) attribs.accumGreenSize)
+                .cAccumBlueBits((byte) attribs.accumBlueSize)
+                .cAccumAlphaBits((byte) attribs.accumAlphaSize)
+                .cAccumBits((byte) (attribs.accumRedSize + attribs.accumGreenSize
+                        + attribs.accumBlueSize + attribs.accumAlphaSize));
+
         long hDCdummy = GetDC(dummyWindowHandle);
-        int pixelFormat = ChoosePixelFormat(null, hDCdummy, pfd);
-        if (pixelFormat == 0 || !SetPixelFormat(null, hDCdummy, pixelFormat, pfd)) {
-            // Pixel format unsupported
-            ReleaseDC(dummyWindowHandle, hDCdummy);
-            throw new AWTException("Unsupported pixel format");
+        if (hDCdummy == 0L) {
+            throw new AWTException("Failed to get dummy window DC");
         }
 
-        /*
-         * Next, create a dummy context using Opengl32.lib's wglCreateContext. This should ALWAYS work, but won't give us a "new"/"core" context if we requested
-         * that and also does not support multisampling. But we use this "dummy" context then to request the required WGL function pointers to create a new
-         * OpenGL >= 3.0 context and with optional multisampling.
-         */
-        long dummyContext = wglCreateContext(null, hDCdummy);
-        if (dummyContext == 0L) {
+        long currentContext = wglGetCurrentContext(null);
+        long currentDc = wglGetCurrentDC();
+        long dummyContext = 0L;
+        try {
+            int pixelFormat = ChoosePixelFormat(null, hDCdummy, pfd);
+            if (pixelFormat == 0 || !SetPixelFormat(null, hDCdummy, pixelFormat, pfd)) {
+                throw new AWTException("Unsupported pixel format");
+            }
+
+            dummyContext = wglCreateContext(null, hDCdummy);
+            if (dummyContext == 0L) {
+                throw new AWTException("Failed to create dummy OpenGL context");
+            }
+            if (!wglMakeCurrent(null, hDCdummy, dummyContext)) {
+                throw new AWTException("Failed to make dummy OpenGL context current");
+            }
+
+            Set<String> wglExtensions = queryWGLExtensions(hDCdummy);
+            boolean legacyContext = !atLeast30(attribs.majorVersion, attribs.minorVersion)
+                    && attribs.samples == 0
+                    && !attribs.sRGB
+                    && !attribs.pixelFormatFloat
+                    && attribs.contextReleaseBehavior == null
+                    && !attribs.robustness
+                    && attribs.api != API.GLES;
+            if (legacyContext) {
+                return createLegacyContext(hDC, pixelFormat, pfd,
+                        attribs, effective, wglExtensions, bufferAddr);
+            }
+            return createExtendedContext(hDC, pixelFormat, pfd,
+                    attribs, effective, wglExtensions, bufferAddr);
+        } finally {
+            if (!wglMakeCurrent(null, currentDc, currentContext)) {
+                wglMakeCurrent(null, 0L, 0L);
+            }
+            if (dummyContext != 0L) {
+                wglDeleteContext(null, dummyContext);
+            }
             ReleaseDC(dummyWindowHandle, hDCdummy);
+        }
+    }
+
+    private static Set<String> queryWGLExtensions(long hDC) {
+        String extensions = "";
+        long getExtensionsString = wglGetProcAddress(null, "wglGetExtensionsStringARB");
+        if (getExtensionsString != 0L) {
+            long address = callPP(hDC, getExtensionsString);
+            if (address != 0L) {
+                extensions = memASCII(address);
+            }
+        } else {
+            getExtensionsString = wglGetProcAddress(null, "wglGetExtensionsStringEXT");
+            if (getExtensionsString != 0L) {
+                long address = callP(getExtensionsString);
+                if (address != 0L) {
+                    extensions = memASCII(address);
+                }
+            }
+        }
+        if (extensions.isEmpty()) {
+            return Collections.emptySet();
+        }
+        String[] split = extensions.split(" ");
+        Set<String> result = new HashSet<>(split.length);
+        Collections.addAll(result, split);
+        return result;
+    }
+
+    private static ContextInfo createLegacyContext(long hDC, int pixelFormat,
+            PIXELFORMATDESCRIPTOR pfd, GLData attribs, GLData effective,
+            Set<String> wglExtensions, long bufferAddr) throws AWTException {
+        applyPixelFormat(hDC, pixelFormat);
+        long context = wglCreateContext(null, hDC);
+        if (context == 0L) {
             throw new AWTException("Failed to create OpenGL context");
         }
 
-        // Save current context to restore it later
-        final long currentContext = wglGetCurrentContext(null);
-        final long currentDc = wglGetCurrentDC();
-
-        // Make the new dummy context current
-        boolean success = wglMakeCurrent(null, hDCdummy, dummyContext);
-        if (!success) {
-            ReleaseDC(dummyWindowHandle, hDCdummy);
-            wglDeleteContext(null, dummyContext);
-            throw new AWTException("Failed to make OpenGL context current");
-        }
-
-        // Query supported WGL extensions
-        String wglExtensions = null;
-        long wglGetExtensionsStringARBAddr = wglGetProcAddress(null, "wglGetExtensionsStringARB");
-        if (wglGetExtensionsStringARBAddr != 0L) {
-            long str = callPP(hDCdummy, wglGetExtensionsStringARBAddr);
-            if (str != 0L) {
-                wglExtensions = memASCII(str);
-            } else {
-                wglExtensions = "";
+        boolean success = false;
+        try {
+            boolean needsCurrentContext = attribs.swapInterval != null
+                    || attribs.swapGroupNV > 0
+                    || attribs.swapBarrierNV > 0;
+            if (needsCurrentContext && !wglMakeCurrent(null, hDC, context)) {
+                throw new AWTException("Could not make GL context current");
             }
-        } else {
-            // Try the EXT extension
-            long wglGetExtensionsStringEXTAddr = wglGetProcAddress(null, "wglGetExtensionsStringEXT");
-            if (wglGetExtensionsStringEXTAddr != 0L) {
-                long str = callP(wglGetExtensionsStringEXTAddr);
-                if (str != 0L) {
-                    wglExtensions = memASCII(str);
-                } else {
-                    wglExtensions = "";
-                }
-            } else {
-                wglExtensions = "";
-            }
-        }
-        String[] splitted = wglExtensions.split(" ");
-        Set<String> wglExtensionsList = new HashSet<>(splitted.length);
-        Collections.addAll(wglExtensionsList, splitted);
-        success = ReleaseDC(dummyWindowHandle, hDCdummy);
-        if (!success) {
-            wglDeleteContext(null, dummyContext);
-            wglMakeCurrent(null, currentDc, currentContext);
-            throw new AWTException("Could not release dummy DC");
-        }
+            configureSwapInterval(attribs, wglExtensions);
+            configureSwapGroup(attribs, wglExtensions, bufferAddr, hDC);
 
-        // For some constellations of context attributes, we can stop right here.
-        if (!atLeast30(attribs.majorVersion, attribs.minorVersion) && attribs.samples == 0 && !attribs.sRGB && !attribs.pixelFormatFloat
-                && attribs.contextReleaseBehavior == null && !attribs.robustness && attribs.api != API.GLES) {
-            /* Finally, create the real context on the real window */
-            long hDC = GetDC(windowHandle);
-            SetPixelFormat(null, hDC, pixelFormat, pfd);
-            success = wglDeleteContext(null, dummyContext);
-            if (!success) {
-                ReleaseDC(windowHandle, hDC);
-                wglMakeCurrent(null, currentDc, currentContext);
-                throw new AWTException("Could not delete dummy GL context");
-            }
-            long context = wglCreateContext(null, hDC);
-
-            if (attribs.swapInterval != null) {
-                boolean has_WGL_EXT_swap_control = wglExtensionsList.contains("WGL_EXT_swap_control");
-                if (!has_WGL_EXT_swap_control) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    wglDeleteContext(null, context);
-                    throw new AWTException("Swap interval requested but WGL_EXT_swap_control is unavailable");
-                }
-                if (attribs.swapInterval < 0) {
-                    // Only allowed if WGL_EXT_swap_control_tear is available
-                    boolean has_WGL_EXT_swap_control_tear = wglExtensionsList.contains("WGL_EXT_swap_control_tear");
-                    if (!has_WGL_EXT_swap_control_tear) {
-                        ReleaseDC(windowHandle, hDC);
-                        wglMakeCurrent(null, currentDc, currentContext);
-                        wglDeleteContext(null, context);
-                        throw new AWTException("Negative swap interval requested but WGL_EXT_swap_control_tear is unavailable");
-                    }
-                }
-                // Make context current to set the swap interval
-                success = wglMakeCurrent(null, hDC, context);
-                if (!success) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    wglDeleteContext(null, context);
-                    throw new AWTException("Could not make GL context current");
-                }
-                long wglSwapIntervalEXTAddr = wglGetProcAddress(null, "wglSwapIntervalEXT");
-                if (wglSwapIntervalEXTAddr != 0L) {
-                    callI(attribs.swapInterval, wglSwapIntervalEXTAddr);
-                }
+            if (attribs.shareContext != null
+                    && !wglShareLists(null, attribs.shareContext.context, context)) {
+                throw new AWTException("Failed while configuring context sharing");
             }
 
-            if (attribs.swapGroupNV > 0 || attribs.swapBarrierNV > 0) {
-                // Only allowed if WGL_NV_swap_group is available
-                boolean has_WGL_NV_swap_group = wglExtensionsList.contains("WGL_NV_swap_group");
-                if (!has_WGL_NV_swap_group) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    wglDeleteContext(null, context);
-                    throw new AWTException("Swap group or barrier requested but WGL_NV_swap_group is unavailable");
-                }
-                // Make context current to join swap group and/or barrier
-                success = wglMakeCurrent(null, hDC, context);
-                try {
-                    wglNvSwapGroupAndBarrier(attribs, bufferAddr, hDC);
-                } catch (AWTException e) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    wglDeleteContext(null, context);
-                    throw e;
-                }
-            }
-
-            /* Check if we want to share context */
-            if (attribs.shareContext != null) {
-                success = wglShareLists(null, attribs.shareContext.context, context);
-                if (!success) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    wglDeleteContext(null, context);
-                    throw new AWTException("Failed while configuring context sharing");
-                }
-            }
-
-            // Describe pixel format
-            int pixFmtIndex = DescribePixelFormat(null, hDC, pixelFormat, pfd);
-            if (pixFmtIndex == 0) {
-                ReleaseDC(windowHandle, hDC);
-                wglMakeCurrent(null, currentDc, currentContext);
-                wglDeleteContext(null, context);
+            if (DescribePixelFormat(null, hDC, pixelFormat, pfd) == 0) {
                 throw new AWTException("Failed to describe pixel format");
-            }
-            success = ReleaseDC(windowHandle, hDC);
-            if (!success) {
-                wglMakeCurrent(null, currentDc, currentContext);
-                wglDeleteContext(null, context);
-                throw new AWTException("Could not release DC");
             }
             effective.redSize = pfd.cRedBits();
             effective.greenSize = pfd.cGreenBits();
@@ -370,120 +339,178 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             effective.accumBlueSize = pfd.cAccumBlueBits();
             effective.accumAlphaSize = pfd.cAccumAlphaBits();
 
-            // Restore old context
-            wglMakeCurrent(null, currentDc, currentContext);
-            return context;
+            success = true;
+            return new ContextInfo(context, pixelFormat);
+        } finally {
+            if (!success) {
+                wglMakeCurrent(null, 0L, 0L);
+                wglDeleteContext(null, context);
+            }
         }
+    }
 
-        // Check for WGL_ARB_create_context support
-        if (!wglExtensionsList.contains("WGL_ARB_create_context")) {
-            wglDeleteContext(null, dummyContext);
-            wglMakeCurrent(null, currentDc, currentContext);
-            throw new AWTException("Extended context attributes requested but WGL_ARB_create_context is unavailable");
-        }
-
-        // Obtain wglCreateContextAttribsARB function pointer
-        long wglCreateContextAttribsARBAddr = wglGetProcAddress(null, "wglCreateContextAttribsARB");
-        if (wglCreateContextAttribsARBAddr == 0L) {
-            wglDeleteContext(null, dummyContext);
-            wglMakeCurrent(null, currentDc, currentContext);
+    private static ContextInfo createExtendedContext(long hDC, int pixelFormat,
+            PIXELFORMATDESCRIPTOR pfd, GLData attribs, GLData effective,
+            Set<String> wglExtensions, long bufferAddr) throws AWTException {
+        requireExtension(wglExtensions, "WGL_ARB_create_context",
+                "Extended context attributes requested but WGL_ARB_create_context is unavailable");
+        long createContextAttribs = wglGetProcAddress(null, "wglCreateContextAttribsARB");
+        if (createContextAttribs == 0L) {
             throw new AWTException("WGL_ARB_create_context available but wglCreateContextAttribsARB is NULL");
         }
 
         IntBuffer attribList = BufferUtils.createIntBuffer(64);
         long attribListAddr = memAddress(attribList);
-        long hDC = GetDC(windowHandle);
 
-        // Obtain wglChoosePixelFormatARB if multisampling or sRGB or floating point pixel format is requested
         if (attribs.samples > 0 || attribs.sRGB || attribs.pixelFormatFloat) {
-            long wglChoosePixelFormatAddr = wglGetProcAddress(null, "wglChoosePixelFormatARB");
-            if (wglChoosePixelFormatAddr == 0L) {
-                // Try EXT function (the WGL constants are the same in both extensions)
-                wglChoosePixelFormatAddr = wglGetProcAddress(null, "wglChoosePixelFormatEXT");
-                if (wglChoosePixelFormatAddr == 0L) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglDeleteContext(null, dummyContext);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    throw new AWTException("No support for wglChoosePixelFormatARB/EXT. Cannot query supported pixel formats.");
-                }
+            long choosePixelFormat = wglGetProcAddress(null, "wglChoosePixelFormatARB");
+            if (choosePixelFormat == 0L) {
+                choosePixelFormat = wglGetProcAddress(null, "wglChoosePixelFormatEXT");
+            }
+            if (choosePixelFormat == 0L) {
+                throw new AWTException("No support for wglChoosePixelFormatARB/EXT. Cannot query supported pixel formats.");
             }
             if (attribs.samples > 0) {
-                // Check for ARB or EXT extension (their WGL constants have the same value)
-                boolean has_WGL_ARB_multisample = wglExtensionsList.contains("WGL_ARB_multisample");
-                boolean has_WGL_EXT_multisample = wglExtensionsList.contains("WGL_EXT_multisample");
-                if (!has_WGL_ARB_multisample && !has_WGL_EXT_multisample) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglDeleteContext(null, dummyContext);
-                    wglMakeCurrent(null, currentDc, currentContext);
+                if (!wglExtensions.contains("WGL_ARB_multisample")
+                        && !wglExtensions.contains("WGL_EXT_multisample")) {
                     throw new AWTException("Multisampling requested but neither WGL_ARB_multisample nor WGL_EXT_multisample available");
                 }
                 if (attribs.colorSamplesNV > 0) {
-                    boolean has_WGL_NV_multisample_coverage = wglExtensionsList.contains("WGL_NV_multisample_coverage");
-                    if (!has_WGL_NV_multisample_coverage) {
-                        ReleaseDC(windowHandle, hDC);
-                        wglDeleteContext(null, dummyContext);
-                        wglMakeCurrent(null, currentDc, currentContext);
-                        throw new AWTException("Color samples requested but WGL_NV_multisample_coverage is unavailable");
-                    }
+                    requireExtension(wglExtensions, "WGL_NV_multisample_coverage",
+                            "Color samples requested but WGL_NV_multisample_coverage is unavailable");
                 }
             }
             if (attribs.sRGB) {
-                // Check for WGL_EXT_framebuffer_sRGB | WGL_ARB_framebuffer_sRGB
-                boolean has_WGL_EXT_framebuffer_sRGB = wglExtensionsList.contains("WGL_EXT_framebuffer_sRGB"),
-                        has_WGL_ARB_framebuffer_sRGB = wglExtensionsList.contains("WGL_ARB_framebuffer_sRGB");
-                
-                if (! (has_WGL_EXT_framebuffer_sRGB || has_WGL_ARB_framebuffer_sRGB) )  {
-                    ReleaseDC(windowHandle, hDC);
-                    wglDeleteContext(null, dummyContext);
-                    wglMakeCurrent(null, currentDc, currentContext);
+                boolean hasExtFramebufferSrgb = wglExtensions.contains("WGL_EXT_framebuffer_sRGB");
+                boolean hasArbFramebufferSrgb = wglExtensions.contains("WGL_ARB_framebuffer_sRGB");
+                if (!hasExtFramebufferSrgb && !hasArbFramebufferSrgb) {
                     throw new AWTException("sRGB color space requested but WGL_EXT_framebuffer_sRGB is unavailable");
                 }
-                
-                attribs.extBuffer_sRGB = has_WGL_EXT_framebuffer_sRGB;
+                attribs.extBuffer_sRGB = hasExtFramebufferSrgb;
             }
             if (attribs.pixelFormatFloat) {
-                // Check for WGL_ARB_pixel_format_float
-                boolean has_WGL_ARB_pixel_format_float = wglExtensionsList.contains("WGL_ARB_pixel_format_float");
-                if (!has_WGL_ARB_pixel_format_float) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglDeleteContext(null, dummyContext);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    throw new AWTException("Floating-point format requested but WGL_ARB_pixel_format_float is unavailable");
-                }
+                requireExtension(wglExtensions, "WGL_ARB_pixel_format_float",
+                        "Floating-point format requested but WGL_ARB_pixel_format_float is unavailable");
             }
-            // Query matching pixel formats
+
             encodePixelFormatAttribs(attribList, attribs);
-            success = callPPPPPI(hDC, attribListAddr, 0L, 1, bufferAddr + 4, bufferAddr, wglChoosePixelFormatAddr) == 1;
+            boolean foundPixelFormat = callPPPPPI(hDC, attribListAddr, 0L, 1,
+                    bufferAddr + 4, bufferAddr, choosePixelFormat) == 1;
             int numFormats = memGetInt(bufferAddr);
-            if (!success || numFormats == 0) {
-                ReleaseDC(windowHandle, hDC);
-                wglDeleteContext(null, dummyContext);
-                wglMakeCurrent(null, currentDc, currentContext);
+            if (!foundPixelFormat || numFormats == 0) {
                 throw new AWTException("No supported pixel format found.");
             }
             pixelFormat = memGetInt(bufferAddr + 4);
-            // Describe pixel format for the PIXELFORMATDESCRIPTOR to match the chosen format
-            int pixFmtIndex = DescribePixelFormat(null, hDC, pixelFormat, pfd);
-            if (pixFmtIndex == 0) {
-                ReleaseDC(windowHandle, hDC);
-                wglDeleteContext(null, dummyContext);
-                wglMakeCurrent(null, currentDc, currentContext);
+            if (DescribePixelFormat(null, hDC, pixelFormat, pfd) == 0) {
                 throw new AWTException("Failed to validate supported pixel format.");
             }
-            // Obtain extended pixel format attributes
-            long wglGetPixelFormatAttribivAddr = wglGetProcAddress(null, "wglGetPixelFormatAttribivARB");
-            if (wglGetPixelFormatAttribivAddr == 0L) {
-                // Try EXT function (function signature is the same)
-                wglGetPixelFormatAttribivAddr = wglGetProcAddress(null, "wglGetPixelFormatAttribivEXT");
-                if (wglGetPixelFormatAttribivAddr == 0L) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglDeleteContext(null, dummyContext);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    throw new AWTException("No support for wglGetPixelFormatAttribivARB/EXT. Cannot get effective pixel format attributes.");
-                }
+            readExtendedPixelFormat(hDC, pixelFormat, attribList, attribListAddr, effective);
+        }
+
+        attribList.rewind();
+        if (attribs.api == API.GL && atLeast30(attribs.majorVersion, attribs.minorVersion)
+                || attribs.api == API.GLES && attribs.majorVersion > 0) {
+            attribList.put(WGL_CONTEXT_MAJOR_VERSION_ARB).put(attribs.majorVersion);
+            attribList.put(WGL_CONTEXT_MINOR_VERSION_ARB).put(attribs.minorVersion);
+        }
+        int profile = 0;
+        if (attribs.api == API.GL) {
+            if (attribs.profile == Profile.COMPATIBILITY) {
+                profile = WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
+            } else if (attribs.profile == Profile.CORE) {
+                profile = WGL_CONTEXT_CORE_PROFILE_BIT_ARB;
             }
-            attribList.rewind();
-            attribList
+        } else if (attribs.api == API.GLES) {
+            requireExtension(wglExtensions, "WGL_EXT_create_context_es2_profile",
+                    "OpenGL ES API requested but WGL_EXT_create_context_es2_profile is unavailable");
+            profile = WGL_CONTEXT_ES2_PROFILE_BIT_EXT;
+        }
+        if (profile > 0) {
+            requireExtension(wglExtensions, "WGL_ARB_create_context_profile",
+                    "OpenGL profile requested but WGL_ARB_create_context_profile is unavailable");
+            attribList.put(WGL_CONTEXT_PROFILE_MASK_ARB).put(profile);
+        }
+
+        int contextFlags = 0;
+        if (attribs.debug) {
+            contextFlags |= WGL_CONTEXT_DEBUG_BIT_ARB;
+        }
+        if (attribs.forwardCompatible) {
+            contextFlags |= WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
+        }
+        if (attribs.robustness) {
+            requireExtension(wglExtensions, "WGL_ARB_create_context_robustness",
+                    "Context with robust buffer access requested but WGL_ARB_create_context_robustness is unavailable");
+            contextFlags |= WGL_CONTEXT_ROBUST_ACCESS_BIT_ARB;
+            if (attribs.loseContextOnReset) {
+                attribList.put(WGL_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB)
+                        .put(WGL_LOSE_CONTEXT_ON_RESET_ARB);
+            }
+            if (attribs.contextResetIsolation) {
+                boolean applicationIsolation = wglExtensions.contains("WGL_ARB_robustness_application_isolation");
+                boolean shareGroupIsolation = wglExtensions.contains("WGL_ARB_robustness_share_group_isolation");
+                if (!applicationIsolation && !shareGroupIsolation) {
+                    throw new AWTException(
+                            "Robustness isolation requested but neither WGL_ARB_robustness_application_isolation nor WGL_ARB_robustness_share_group_isolation available");
+                }
+                contextFlags |= WGL_CONTEXT_RESET_ISOLATION_BIT_ARB;
+            }
+        }
+        if (contextFlags > 0) {
+            attribList.put(WGL_CONTEXT_FLAGS_ARB).put(contextFlags);
+        }
+        if (attribs.contextReleaseBehavior != null) {
+            requireExtension(wglExtensions, "WGL_ARB_context_flush_control",
+                    "Context release behavior requested but WGL_ARB_context_flush_control is unavailable");
+            if (attribs.contextReleaseBehavior == ReleaseBehavior.NONE) {
+                attribList.put(WGL_CONTEXT_RELEASE_BEHAVIOR_ARB)
+                        .put(WGL_CONTEXT_RELEASE_BEHAVIOR_NONE_ARB);
+            } else if (attribs.contextReleaseBehavior == ReleaseBehavior.FLUSH) {
+                attribList.put(WGL_CONTEXT_RELEASE_BEHAVIOR_ARB)
+                        .put(WGL_CONTEXT_RELEASE_BEHAVIOR_FLUSH_ARB);
+            }
+        }
+        attribList.put(0).put(0);
+
+        applyPixelFormat(hDC, pixelFormat);
+        long context = callPPPP(hDC,
+                attribs.shareContext != null ? attribs.shareContext.context : 0L,
+                attribListAddr, createContextAttribs);
+        if (context == 0L) {
+            throw new AWTException("Failed to create OpenGL context.");
+        }
+
+        boolean success = false;
+        try {
+            if (!wglMakeCurrent(null, hDC, context)) {
+                throw new AWTException("Could not make GL context current");
+            }
+            configureSwapInterval(attribs, wglExtensions);
+            configureSwapGroup(attribs, wglExtensions, bufferAddr, hDC);
+            readEffectiveContext(attribs, effective, wglExtensions, bufferAddr);
+            success = true;
+            return new ContextInfo(context, pixelFormat);
+        } finally {
+            if (!success) {
+                wglMakeCurrent(null, 0L, 0L);
+                wglDeleteContext(null, context);
+            }
+        }
+    }
+
+    private static void readExtendedPixelFormat(long hDC, int pixelFormat, IntBuffer attribList,
+            long attribListAddr, GLData effective) throws AWTException {
+        long getPixelFormatAttribiv = wglGetProcAddress(null, "wglGetPixelFormatAttribivARB");
+        if (getPixelFormatAttribiv == 0L) {
+            getPixelFormatAttribiv = wglGetProcAddress(null, "wglGetPixelFormatAttribivEXT");
+        }
+        if (getPixelFormatAttribiv == 0L) {
+            throw new AWTException(
+                    "No support for wglGetPixelFormatAttribivARB/EXT. Cannot get effective pixel format attributes.");
+        }
+
+        attribList.rewind();
+        attribList
                 .put(WGL_DOUBLE_BUFFER_ARB)
                 .put(WGL_STEREO_ARB)
                 .put(WGL_PIXEL_TYPE_ARB)
@@ -497,177 +524,56 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 .put(WGL_ACCUM_ALPHA_BITS_ARB)
                 .put(WGL_DEPTH_BITS_ARB)
                 .put(WGL_STENCIL_BITS_ARB);
-            IntBuffer attribValues = BufferUtils.createIntBuffer(attribList.position());
-            long attribValuesAddr = memAddress(attribValues);
-            success = callPPPI(hDC, pixelFormat, PFD_MAIN_PLANE, attribList.position(), attribListAddr,
-                    attribValuesAddr, wglGetPixelFormatAttribivAddr) == 1;
-            if (!success) {
-                ReleaseDC(windowHandle, hDC);
-                wglDeleteContext(null, dummyContext);
-                wglMakeCurrent(null, currentDc, currentContext);
-                throw new AWTException("Failed to get pixel format attributes.");
-            }
-            effective.doubleBuffer = attribValues.get(0) == 1;
-            effective.stereo = attribValues.get(1) == 1;
-            int pixelType = attribValues.get(2);
-            effective.pixelFormatFloat = pixelType == WGL_TYPE_RGBA_FLOAT_ARB;
-            effective.redSize = attribValues.get(3);
-            effective.greenSize = attribValues.get(4);
-            effective.blueSize = attribValues.get(5);
-            effective.alphaSize = attribValues.get(6);
-            effective.accumRedSize = attribValues.get(7);
-            effective.accumGreenSize = attribValues.get(8);
-            effective.accumBlueSize = attribValues.get(9);
-            effective.accumAlphaSize = attribValues.get(10);
-            effective.depthSize = attribValues.get(11);
-            effective.stencilSize = attribValues.get(12);
-        }
-
-        // Compose the attributes list
-        attribList.rewind();
-        if (attribs.api == API.GL && atLeast30(attribs.majorVersion, attribs.minorVersion) || attribs.api == API.GLES && attribs.majorVersion > 0) {
-            attribList.put(WGL_CONTEXT_MAJOR_VERSION_ARB).put(attribs.majorVersion);
-            attribList.put(WGL_CONTEXT_MINOR_VERSION_ARB).put(attribs.minorVersion);
-        }
-        int profile = 0;
-        if (attribs.api == API.GL) {
-            if (attribs.profile == Profile.COMPATIBILITY) {
-                profile = WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
-            } else if (attribs.profile == Profile.CORE) {
-                profile = WGL_CONTEXT_CORE_PROFILE_BIT_ARB;
-            }
-        } else if (attribs.api == API.GLES) {
-            boolean has_WGL_EXT_create_context_es2_profile = wglExtensionsList.contains("WGL_EXT_create_context_es2_profile");
-            if (!has_WGL_EXT_create_context_es2_profile) {
-                ReleaseDC(windowHandle, hDC);
-                wglDeleteContext(null, dummyContext);
-                wglMakeCurrent(null, currentDc, currentContext);
-                throw new AWTException("OpenGL ES API requested but WGL_EXT_create_context_es2_profile is unavailable");
-            }
-            profile = WGL_CONTEXT_ES2_PROFILE_BIT_EXT;
-        }
-        if (profile > 0) {
-            boolean has_WGL_ARB_create_context_profile = wglExtensionsList.contains("WGL_ARB_create_context_profile");
-            if (!has_WGL_ARB_create_context_profile) {
-                ReleaseDC(windowHandle, hDC);
-                wglDeleteContext(null, dummyContext);
-                wglMakeCurrent(null, currentDc, currentContext);
-                throw new AWTException("OpenGL profile requested but WGL_ARB_create_context_profile is unavailable");
-            }
-            attribList.put(WGL_CONTEXT_PROFILE_MASK_ARB).put(profile);
-        }
-        int contextFlags = 0;
-        if (attribs.debug) {
-            contextFlags |= WGL_CONTEXT_DEBUG_BIT_ARB;
-        }
-        if (attribs.forwardCompatible) {
-            contextFlags |= WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
-        }
-        if (attribs.robustness) {
-            // Check for WGL_ARB_create_context_robustness
-            boolean has_WGL_ARB_create_context_robustness = wglExtensions.contains("WGL_ARB_create_context_robustness");
-            if (!has_WGL_ARB_create_context_robustness) {
-                ReleaseDC(windowHandle, hDC);
-                wglDeleteContext(null, dummyContext);
-                wglMakeCurrent(null, currentDc, currentContext);
-                throw new AWTException("Context with robust buffer access requested but WGL_ARB_create_context_robustness is unavailable");
-            }
-            contextFlags |= WGL_CONTEXT_ROBUST_ACCESS_BIT_ARB;
-            if (attribs.loseContextOnReset) {
-                attribList.put(WGL_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB).put(
-                        WGL_LOSE_CONTEXT_ON_RESET_ARB);
-                // Note: WGL_NO_RESET_NOTIFICATION_ARB is default behaviour and need not be specified.
-            }
-            if (attribs.contextResetIsolation) {
-                // Check for WGL_ARB_robustness_application_isolation or WGL_ARB_robustness_share_group_isolation
-                boolean has_WGL_ARB_robustness_application_isolation = wglExtensions.contains("WGL_ARB_robustness_application_isolation");
-                boolean has_WGL_ARB_robustness_share_group_isolation = wglExtensions.contains("WGL_ARB_robustness_share_group_isolation");
-                if (!has_WGL_ARB_robustness_application_isolation && !has_WGL_ARB_robustness_share_group_isolation) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglDeleteContext(null, dummyContext);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    throw new AWTException(
-                            "Robustness isolation requested but neither WGL_ARB_robustness_application_isolation nor WGL_ARB_robustness_share_group_isolation available");
-                }
-                contextFlags |= WGL_CONTEXT_RESET_ISOLATION_BIT_ARB;
-            }
-        }
-        if (contextFlags > 0)
-            attribList.put(WGL_CONTEXT_FLAGS_ARB).put(contextFlags);
-        if (attribs.contextReleaseBehavior != null) {
-            boolean has_WGL_ARB_context_flush_control = wglExtensionsList.contains("WGL_ARB_context_flush_control");
-            if (!has_WGL_ARB_context_flush_control) {
-                ReleaseDC(windowHandle, hDC);
-                wglDeleteContext(null, dummyContext);
-                wglMakeCurrent(null, currentDc, currentContext);
-                throw new AWTException("Context release behavior requested but WGL_ARB_context_flush_control is unavailable");
-            }
-            if (attribs.contextReleaseBehavior == ReleaseBehavior.NONE)
-                attribList.put(WGL_CONTEXT_RELEASE_BEHAVIOR_ARB).put(WGL_CONTEXT_RELEASE_BEHAVIOR_NONE_ARB);
-            else if (attribs.contextReleaseBehavior == ReleaseBehavior.FLUSH)
-                attribList.put(WGL_CONTEXT_RELEASE_BEHAVIOR_ARB).put(WGL_CONTEXT_RELEASE_BEHAVIOR_FLUSH_ARB);
-        }
-        attribList.put(0).put(0);
-        // Set pixelformat
-        success = SetPixelFormat(null, hDC, pixelFormat, pfd);
+        IntBuffer values = BufferUtils.createIntBuffer(attribList.position());
+        boolean success = callPPPI(hDC, pixelFormat, PFD_MAIN_PLANE,
+                attribList.position(), attribListAddr, memAddress(values), getPixelFormatAttribiv) == 1;
         if (!success) {
-            ReleaseDC(windowHandle, hDC);
-            wglDeleteContext(null, dummyContext);
-            wglMakeCurrent(null, currentDc, currentContext);
-            throw new AWTException("Failed to set pixel format.");
+            throw new AWTException("Failed to get pixel format attributes.");
         }
-        // And create new context with it
-        long newCtx = callPPPP(hDC, attribs.shareContext != null ? attribs.shareContext.context : 0L, attribListAddr, wglCreateContextAttribsARBAddr);
-        wglDeleteContext(null, dummyContext);
-        if (newCtx == 0L) {
-            ReleaseDC(windowHandle, hDC);
-            wglMakeCurrent(null, currentDc, currentContext);
-            throw new AWTException("Failed to create OpenGL context.");
+        effective.doubleBuffer = values.get(0) == 1;
+        effective.stereo = values.get(1) == 1;
+        effective.pixelFormatFloat = values.get(2) == WGL_TYPE_RGBA_FLOAT_ARB;
+        effective.redSize = values.get(3);
+        effective.greenSize = values.get(4);
+        effective.blueSize = values.get(5);
+        effective.alphaSize = values.get(6);
+        effective.accumRedSize = values.get(7);
+        effective.accumGreenSize = values.get(8);
+        effective.accumBlueSize = values.get(9);
+        effective.accumAlphaSize = values.get(10);
+        effective.depthSize = values.get(11);
+        effective.stencilSize = values.get(12);
+    }
+
+    private static void configureSwapInterval(GLData attribs, Set<String> wglExtensions)
+            throws AWTException {
+        if (attribs.swapInterval == null) {
+            return;
         }
-        // Make context current for next operations
-        wglMakeCurrent(null, hDC, newCtx);
-        if (attribs.swapInterval != null) {
-            boolean has_WGL_EXT_swap_control = wglExtensionsList.contains("WGL_EXT_swap_control");
-            if (!has_WGL_EXT_swap_control) {
-                ReleaseDC(windowHandle, hDC);
-                wglMakeCurrent(null, currentDc, currentContext);
-                wglDeleteContext(null, newCtx);
-                throw new AWTException("Swap interval requested but WGL_EXT_swap_control is unavailable");
-            }
-            if (attribs.swapInterval < 0) {
-                // Only allowed if WGL_EXT_swap_control_tear is available
-                boolean has_WGL_EXT_swap_control_tear = wglExtensionsList.contains("WGL_EXT_swap_control_tear");
-                if (!has_WGL_EXT_swap_control_tear) {
-                    ReleaseDC(windowHandle, hDC);
-                    wglMakeCurrent(null, currentDc, currentContext);
-                    wglDeleteContext(null, newCtx);
-                    throw new AWTException("Negative swap interval requested but WGL_EXT_swap_control_tear is unavailable");
-                }
-            }
-            long wglSwapIntervalEXTAddr = wglGetProcAddress(null, "wglSwapIntervalEXT");
-            if (wglSwapIntervalEXTAddr != 0L) {
-                callI(attribs.swapInterval, wglSwapIntervalEXTAddr);
-            }
+        requireExtension(wglExtensions, "WGL_EXT_swap_control",
+                "Swap interval requested but WGL_EXT_swap_control is unavailable");
+        if (attribs.swapInterval < 0) {
+            requireExtension(wglExtensions, "WGL_EXT_swap_control_tear",
+                    "Negative swap interval requested but WGL_EXT_swap_control_tear is unavailable");
         }
-        if (attribs.swapGroupNV > 0 || attribs.swapBarrierNV > 0) {
-            // Only allowed if WGL_NV_swap_group is available
-            boolean has_WGL_NV_swap_group = wglExtensionsList.contains("WGL_NV_swap_group");
-            if (!has_WGL_NV_swap_group) {
-                ReleaseDC(windowHandle, hDC);
-                wglMakeCurrent(null, currentDc, currentContext);
-                wglDeleteContext(null, newCtx);
-                throw new AWTException("Swap group or barrier requested but WGL_NV_swap_group is unavailable");
-            }
-            try {
-                wglNvSwapGroupAndBarrier(attribs, bufferAddr, hDC);
-            } catch (AWTException e) {
-                ReleaseDC(windowHandle, hDC);
-                wglMakeCurrent(null, currentDc, currentContext);
-                wglDeleteContext(null, newCtx);
-                throw e;
-            }
+        long swapInterval = wglGetProcAddress(null, "wglSwapIntervalEXT");
+        if (swapInterval != 0L) {
+            callI(attribs.swapInterval, swapInterval);
         }
-        ReleaseDC(windowHandle, hDC);
+    }
+
+    private static void configureSwapGroup(GLData attribs, Set<String> wglExtensions,
+            long bufferAddr, long hDC) throws AWTException {
+        if (attribs.swapGroupNV == 0 && attribs.swapBarrierNV == 0) {
+            return;
+        }
+        requireExtension(wglExtensions, "WGL_NV_swap_group",
+                "Swap group or barrier requested but WGL_NV_swap_group is unavailable");
+        wglNvSwapGroupAndBarrier(attribs, bufferAddr, hDC);
+    }
+
+    private static void readEffectiveContext(GLData attribs, GLData effective,
+            Set<String> wglExtensions, long bufferAddr) {
         long getInteger = GL.getFunctionProvider().getFunctionAddress("glGetIntegerv");
         long getString = GL.getFunctionProvider().getFunctionAddress("glGetString");
         effective.api = attribs.api;
@@ -681,23 +587,18 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             effective.debug = (effectiveContextFlags & GL_CONTEXT_FLAG_DEBUG_BIT) != 0;
             effective.forwardCompatible = (effectiveContextFlags & GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0;
             effective.robustness = (effectiveContextFlags & GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB) != 0;
-        } else if (attribs.api == API.GL) {
-            APIVersion version = apiParseVersion(memUTF8(Checks.check(callP(GL_VERSION, getString))));
-            effective.majorVersion = version.major;
-            effective.minorVersion = version.minor;
-        } else if (attribs.api == API.GLES) {
-            APIVersion version = apiParseVersion(memUTF8(Checks.check(callP(GL_VERSION, getString))));
+        } else {
+            APIVersion version = apiParseVersion(
+                    memUTF8(Checks.check(callP(GL_VERSION, getString))));
             effective.majorVersion = version.major;
             effective.minorVersion = version.minor;
         }
         if (attribs.api == API.GL && atLeast32(effective.majorVersion, effective.minorVersion)) {
             callPV(GL_CONTEXT_PROFILE_MASK, bufferAddr, getInteger);
             int effectiveProfileMask = memGetInt(bufferAddr);
-            boolean core = (effectiveProfileMask & GL_CONTEXT_CORE_PROFILE_BIT) != 0;
-            boolean comp = (effectiveProfileMask & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0;
-            if (comp) {
+            if ((effectiveProfileMask & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0) {
                 effective.profile = Profile.COMPATIBILITY;
-            } else if (core) {
+            } else if ((effectiveProfileMask & GL_CONTEXT_CORE_PROFILE_BIT) != 0) {
                 effective.profile = Profile.CORE;
             } else {
                 effective.profile = null;
@@ -708,15 +609,18 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             effective.samples = memGetInt(bufferAddr);
             callPV(GL_SAMPLE_BUFFERS_ARB, bufferAddr, getInteger);
             effective.sampleBuffers = memGetInt(bufferAddr);
-            boolean has_WGL_NV_multisample_coverage = wglExtensionsList.contains("WGL_NV_multisample_coverage");
-            if (has_WGL_NV_multisample_coverage) {
+            if (wglExtensions.contains("WGL_NV_multisample_coverage")) {
                 callPV(GL_COLOR_SAMPLES_NV, bufferAddr, getInteger);
                 effective.colorSamplesNV = memGetInt(bufferAddr);
             }
         }
-        // Restore old context
-        wglMakeCurrent(null, currentDc, currentContext);
-        return newCtx;
+    }
+
+    private static void requireExtension(Set<String> extensions, String extension, String message)
+            throws AWTException {
+        if (!extensions.contains(extension)) {
+            throw new AWTException(message);
+        }
     }
 
     private static void wglNvSwapGroupAndBarrier(GLData attribs, long bufferAddr, long hDC) throws AWTException {
@@ -761,14 +665,10 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
     @Override
     public boolean makeCurrent(long context) {
+        long hdc = requireLockedHdc();
         if (context == 0L)
             return wglMakeCurrent(null, 0L, 0L);
-        long hdc = GetDC(hwnd);
-        if (hdc == 0L)
-        	return false;
-        boolean ret = wglMakeCurrent(null, hdc, context);
-        ReleaseDC(hwnd, hdc);
-        return ret;
+        return wglMakeCurrent(null, hdc, context);
     }
 
     @Override
@@ -778,16 +678,12 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
 
     @Override
     public boolean swapBuffers() {
-        long hdc = GetDC(hwnd);
-        if (hdc == 0L)
-        	return false;
-        boolean ret = SwapBuffers(null, hdc);
-        ReleaseDC(hwnd, hdc);
-        return ret;
+        return SwapBuffers(null, requireLockedHdc());
     }
 
     @Override
     public boolean delayBeforeSwapNV(float seconds) {
+        long hdc = requireLockedHdc();
         if (!wglDelayBeforeSwapNVAddr_set) {
             wglDelayBeforeSwapNVAddr = wglGetProcAddress(null, "wglDelayBeforeSwapNV");
             wglDelayBeforeSwapNVAddr_set = true;
@@ -795,24 +691,60 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         if (wglDelayBeforeSwapNVAddr == 0L) {
             throw new UnsupportedOperationException("wglDelayBeforeSwapNV is unavailable");
         }
-        long hDC = GetDC(hwnd);
-        int ret = callPI(hDC, seconds, wglDelayBeforeSwapNVAddr);
-        ReleaseDC(hwnd, hDC);
-        return ret == 1;
+        return callPI(hdc, seconds, wglDelayBeforeSwapNVAddr) == 1;
     }
 
     @Override
     public void lock() throws AWTException {
+        if (ds != null) {
+            throw new AWTException("JAWT drawing surface is already locked");
+        }
+        if (canvas == null) {
+            throw new AWTException("Canvas has not been created or was disposed");
+        }
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         if (ds == null) {
             throw new AWTException("Failed to get JAWT drawing surface");
         }
-        int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
-        if ((lock & JAWT_LOCK_ERROR) != 0) {
-            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
-            throw new AWTException("JAWT_DrawingSurface_Lock() failed");
+        boolean locked = false;
+        JAWTDrawingSurfaceInfo dsi = null;
+        boolean success = false;
+        try {
+            int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
+            if ((lock & JAWT_LOCK_ERROR) != 0) {
+                throw new AWTException("JAWT_DrawingSurface_Lock() failed");
+            }
+            locked = true;
+            dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+            if (dsi == null) {
+                throw new AWTException("Failed to get JAWT drawing surface info");
+            }
+            JAWTWin32DrawingSurfaceInfo dsiWin = JAWTWin32DrawingSurfaceInfo.create(dsi.platformInfo());
+            long currentHwnd = dsiWin.hwnd();
+            long currentHdc = dsiWin.hdc();
+            if (currentHwnd == 0L || currentHdc == 0L) {
+                throw new AWTException("JAWT returned an invalid Win32 drawing surface");
+            }
+            if (currentHwnd != hwnd) {
+                applyPixelFormat(currentHdc, pixelFormat);
+                hwnd = currentHwnd;
+            }
+            this.ds = ds;
+            this.dsi = dsi;
+            this.hdc = currentHdc;
+            this.drawingSurfaceThread = Thread.currentThread();
+            success = true;
+        } finally {
+            if (!success) {
+                if (dsi != null) {
+                    JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
+                }
+                if (locked) {
+                    JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+                }
+                JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
+            }
         }
-        this.ds = ds;
     }
 
     @Override
@@ -821,17 +753,65 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         if (ds == null) {
             throw new AWTException("JAWT drawing surface is not locked");
         }
-        try {
-            JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
-        } finally {
-            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
-            this.ds = null;
+        if (drawingSurfaceThread != Thread.currentThread()) {
+            throw new AWTException("JAWT drawing surface must be unlocked by the thread that locked it");
         }
+        JAWTDrawingSurfaceInfo dsi = this.dsi;
+        this.hdc = 0L;
+        this.dsi = null;
+        this.ds = null;
+        this.drawingSurfaceThread = null;
+        try {
+            if (dsi != null) {
+                JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
+            }
+        } finally {
+            try {
+                JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+            } finally {
+                JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
+            }
+        }
+    }
+
+    private static void applyPixelFormat(long hdc, int pixelFormat) throws AWTException {
+        if (pixelFormat == 0) {
+            throw new AWTException("No pixel format is available for the AWT peer");
+        }
+        int currentPixelFormat = GetPixelFormat(null, hdc);
+        if (currentPixelFormat == pixelFormat) {
+            return;
+        }
+        if (currentPixelFormat != 0) {
+            throw new AWTException("The AWT peer has an incompatible pixel format");
+        }
+        try (MemoryStack stack = stackPush()) {
+            PIXELFORMATDESCRIPTOR pfd = PIXELFORMATDESCRIPTOR.calloc(stack)
+                    .nSize((short) PIXELFORMATDESCRIPTOR.SIZEOF)
+                    .nVersion((short) 1);
+            if (DescribePixelFormat(null, hdc, pixelFormat, pfd) == 0
+                    || !SetPixelFormat(null, hdc, pixelFormat, pfd)) {
+                throw new AWTException("Failed to apply the pixel format to the AWT peer");
+            }
+        }
+    }
+
+    private long requireLockedHdc() {
+        long hdc = this.hdc;
+        if (hdc == 0L) {
+            throw new IllegalStateException("The JAWT drawing surface must be locked for this operation");
+        }
+        if (drawingSurfaceThread != Thread.currentThread()) {
+            throw new IllegalStateException("The JAWT drawing surface is locked by another thread");
+        }
+        return hdc;
     }
 
     @Override
     public void dispose() {
         canvas = null;
+        hwnd = 0L;
+        pixelFormat = 0;
     }
 
 }
