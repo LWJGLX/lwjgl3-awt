@@ -75,7 +75,6 @@ jobs:
             java_architecture: x64
             mesa: true
             test_scope: full suite
-            test_command: ./mvnw -B test
             upload_images: true
           # Zulu 8 and the Mesa software driver are not available for Windows ARM64.
           # Still exercise ARM64 compilation, native dependency resolution, and unit behavior.
@@ -85,7 +84,6 @@ jobs:
             java_architecture: aarch64
             mesa: false
             test_scope: unit smoke
-            test_command: ./mvnw -B -Dtest=AWTGLCanvasLifecycleTest test
             upload_images: false
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
@@ -133,8 +131,15 @@ jobs:
           Set-ItemProperty -Path $key -Name 'Version' -Value 2 -Type DWord
           Get-Item (Join-Path $system32 'mesadrv.dll') | Format-Table Name, Length
           Get-ItemProperty -Path $key | Format-List DLL, DriverVersion, Flags, Version
-      - name: Build with Maven
-        run: ${{ matrix.test_command }}
+      - name: Build with Maven (full suite)
+        if: matrix.test_scope == 'full suite'
+        run: ./mvnw -B test
+        env:
+          GALLIUM_DRIVER: llvmpipe
+          LIBGL_ALWAYS_SOFTWARE: '1'
+      - name: Build with Maven (unit smoke)
+        if: matrix.test_scope == 'unit smoke'
+        run: ./mvnw -B -Dtest=AWTGLCanvasLifecycleTest test
         env:
           GALLIUM_DRIVER: llvmpipe
           LIBGL_ALWAYS_SOFTWARE: '1'
