@@ -9,25 +9,36 @@ concurrency:
 
 jobs:
   test-linux:
-    name: Test on Linux
-    runs-on: ubuntu-latest
+    name: Test on Linux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            java_architecture: x64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            java_architecture: aarch64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
-    - name: Update Package Information
-      run: sudo apt-get update
-    - name: Install Dependencies
-      run: sudo apt-get install -y git openjdk-8-jdk xvfb mesa*
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-    - name: Cache Maven dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - name: Set up JDK 8
+      uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
       with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: ${{ runner.os }}-maven-
+        java-version: 8
+        distribution: 'zulu'
+        architecture: ${{ matrix.java_architecture }}
+        cache: maven
+    - name: Update Package Information
+      run: sudo apt-get update
+    - name: Install Dependencies
+      run: sudo apt-get install -y git xvfb mesa*
     - name: Build with Maven
       run: |
         export XVFB_WHD="1920x1080x24"
@@ -49,11 +60,33 @@ jobs:
       if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        name: images-linux
+        name: images-linux-${{ matrix.arch }}
         path: 'target/*.png'
   test-windows:
-    name: Test on Windows
-    runs-on: windows-latest
+    name: Test on Windows (${{ matrix.arch }}, ${{ matrix.test_scope }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-2025
+            java_version: '8'
+            java_architecture: x64
+            mesa: true
+            test_scope: full suite
+            test_command: ./mvnw -B test
+            upload_images: true
+          # Zulu 8 and the Mesa software driver are not available for Windows ARM64.
+          # Still exercise ARM64 compilation, native dependency resolution, and unit behavior.
+          - arch: arm64
+            runner: windows-11-arm
+            java_version: '17'
+            java_architecture: aarch64
+            mesa: false
+            test_scope: unit smoke
+            test_command: ./mvnw -B -Dtest=AWTGLCanvasLifecycleTest test
+            upload_images: false
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -61,13 +94,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Set up JDK 8
+      - name: Set up JDK ${{ matrix.java_version }}
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
-          java-version: 8
+          java-version: ${{ matrix.java_version }}
           distribution: 'zulu'
+          architecture: ${{ matrix.java_architecture }}
           cache: maven
       - name: Register Mesa as the OpenGL driver
+        if: matrix.mesa
         shell: pwsh
         env:
           MESA_VERSION: '26.1.4'
@@ -98,19 +133,29 @@ jobs:
           Get-Item (Join-Path $system32 'mesadrv.dll') | Format-Table Name, Length
           Get-ItemProperty -Path $key | Format-List DLL, DriverVersion, Flags, Version
       - name: Build with Maven
-        run: ./mvnw -B test
+        run: ${{ matrix.test_command }}
         env:
           GALLIUM_DRIVER: llvmpipe
           LIBGL_ALWAYS_SOFTWARE: '1'
       - name: Upload Images
-        if: always()
+        if: always() && matrix.upload_images
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: images-windows
+          name: images-windows-${{ matrix.arch }}
           path: 'target/*.png'
   test-macos:
-    name: Test on macOS
-    runs-on: macos-latest
+    name: Test on macOS (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+            java_architecture: x64
+          - arch: arm64
+            runner: macos-15
+            java_architecture: aarch64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -123,6 +168,7 @@ jobs:
         with:
           java-version: 8
           distribution: 'zulu'
+          architecture: ${{ matrix.java_architecture }}
           cache: maven
       - name: Build with Maven
         run: ./mvnw -B test
@@ -130,7 +176,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: images-macos
+          name: images-macos-${{ matrix.arch }}
           path: 'target/*.png'
       - name: Collect native crash logs
         if: failure()
@@ -159,6 +205,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: crash-logs-macos
+          name: crash-logs-macos-${{ matrix.arch }}
           path: 'crash-logs/'
           if-no-files-found: warn
