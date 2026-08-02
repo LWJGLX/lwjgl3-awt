@@ -93,6 +93,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private Canvas canvas;
     private long view;
     private long interLayer;
+    private long surfaceLayer;
     private boolean hierarchyListenerAdded;
     private int width;
     private int height;
@@ -111,7 +112,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             hierarchyListenerAdded = true;
         }
         long context;
-        long surfaceLayer;
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
             int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
@@ -213,7 +213,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
                     view = createNSOpenGLView(pixelFormat, x, y, width, height);
                     // The surface layer belongs to the peer view rather than to the drawing surface info, but
-                    // retain it anyway so it stays alive until the layer has been attached below.
+                    // retain it so it stays alive until the context is deleted.
                     surfaceLayer = invokePPP(dsi.platformInfo(), sel_getUid("retain"), objc_msgSend);
                     long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
                     context = invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
@@ -227,27 +227,19 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
         }
 
-        try {
-            attachSurfaceLayer(surfaceLayer, interLayer);
-        } finally {
-            invokePPP(surfaceLayer, sel_getUid("release"), objc_msgSend);
-        }
+        attachSurfaceLayer(surfaceLayer, interLayer);
+        performSelectorOnMainThread(interLayer, sel_getUid("release"), MemoryUtil.NULL);
         return context;
     }
 
     /**
-     * Hands the view's layer tree to the JAWT surface layer on AppKit's main thread.
+     * Queues the view's layer tree for attachment to the JAWT surface layer on AppKit's main thread.
      *
-     * <p>This waits for AppKit to run the selector, so it must not be called while the JAWT drawing surface is
-     * locked: AppKit takes that same lock, so waiting for it here would deadlock the two threads.</p>
+     * <p>This must not wait for AppKit: the caller may be AWT's event thread while AppKit is synchronously calling
+     * back into AWT, for example to query accessibility state.</p>
      */
     private static void attachSurfaceLayer(long surfaceLayer, long layer) {
-        JNI.callPPPPV(surfaceLayer,
-                ObjCRuntime.sel_getUid("performSelectorOnMainThread:withObject:waitUntilDone:"),
-                ObjCRuntime.sel_getUid("setLayer:"),
-                layer,
-                ObjCRuntime.YES,
-                objc_msgSend);
+        performSelectorOnMainThread(surfaceLayer, sel_getUid("setLayer:"), layer);
     }
 
     private long createNSOpenGLView(long pixelFormat, int x, int y, int width, int height) {
@@ -288,6 +280,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 ObjCRuntime.objc_getClass("CALayer"),
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
+        invokePPP(interLayer, sel_getUid("retain"), objc_msgSend);
 
         // [interLayer setFrame:CGRectMake(x, y, width, height)];
         setOpenglViewLayersFrame(interLayer, new double[]{x, y, width, height});
@@ -320,11 +313,19 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         hiddenValue.put(0, hidden ? (byte) 1 : 0);
         JNI.callPPPPV(invocation, sel_getUid("setArgument:atIndex:"), memAddress(hiddenValue), 2, objc_msgSend);
 
-        JNI.callPPPPV(invocation,
+        // Hierarchy notifications run on AWT's event thread, which AppKit may itself be waiting for. Queue the
+        // mutation rather than introducing a synchronous AWT/AppKit cross-thread wait.
+        invokePPP(invocation, sel_getUid("retain"), objc_msgSend);
+        performSelectorOnMainThread(invocation, sel_getUid("invoke"), MemoryUtil.NULL);
+        performSelectorOnMainThread(invocation, sel_getUid("release"), MemoryUtil.NULL);
+    }
+
+    private static void performSelectorOnMainThread(long target, long selector, long argument) {
+        JNI.callPPPPV(target,
                 sel_getUid("performSelectorOnMainThread:withObject:waitUntilDone:"),
-                sel_getUid("invoke"),
-                MemoryUtil.NULL,
-                ObjCRuntime.YES,
+                selector,
+                argument,
+                ObjCRuntime.NO,
                 objc_msgSend);
     }
 
@@ -409,11 +410,18 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     @Override
     public boolean deleteContext(long context) {
-        // frees created NSOpenGLView
-        invokePPP(view, sel_getUid("removeFromSuperviewWithoutNeedingDisplay"), objc_msgSend);
-        invokePPP(view, sel_getUid("clearGLContext"), objc_msgSend);
-        invokePPP(view, sel_getUid("release"), objc_msgSend);
-        view = 0L;
+        long view = this.view;
+        long surfaceLayer = this.surfaceLayer;
+        this.view = 0L;
+        this.surfaceLayer = 0L;
+
+        // Keep teardown ordered behind any pending layer updates and run it on AppKit's main thread. Clearing an
+        // NSOpenGLContext concurrently with Core Animation displaying its backing layer can abort inside setView:.
+        performSelectorOnMainThread(surfaceLayer, sel_getUid("setLayer:"), MemoryUtil.NULL);
+        performSelectorOnMainThread(view, sel_getUid("removeFromSuperviewWithoutNeedingDisplay"), MemoryUtil.NULL);
+        performSelectorOnMainThread(view, sel_getUid("clearGLContext"), MemoryUtil.NULL);
+        performSelectorOnMainThread(view, sel_getUid("release"), MemoryUtil.NULL);
+        performSelectorOnMainThread(surfaceLayer, sel_getUid("release"), MemoryUtil.NULL);
         return true;
     }
 
