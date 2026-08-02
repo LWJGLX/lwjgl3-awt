@@ -76,19 +76,8 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     public JAWTDrawingSurface ds;
     private JAWTDrawingSurfaceInfo dsi;
     private long hdc;
-    private int pixelFormat;
     private Thread drawingSurfaceThread;
     private Canvas canvas;
-
-    private static final class ContextInfo {
-        final long context;
-        final int pixelFormat;
-
-        ContextInfo(long context, int pixelFormat) {
-            this.context = context;
-            this.pixelFormat = pixelFormat;
-        }
-    }
 
     /**
      * Encode the pixel format attributes stored in the given {@link GLData} into the given {@link IntBuffer} for wglChoosePixelFormatARB to consume.
@@ -177,9 +166,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                             throw new AWTException("Failed to create dummy window");
                         }
                         try {
-                            ContextInfo result = create(stack, dsiWin.hdc(), hwndDummy, attribs, effective);
-                            this.pixelFormat = result.pixelFormat;
-                            return result.context;
+                            return create(stack, dsiWin.hdc(), hwndDummy, attribs, effective);
                         } finally {
                             DestroyWindow(null, hwndDummy);
                         }
@@ -195,7 +182,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         }
     }
 
-    private static ContextInfo create(MemoryStack stack, long hDC, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
+    private static long create(MemoryStack stack, long hDC, long dummyWindowHandle, GLData attribs, GLData effective) throws AWTException {
         long bufferAddr = stack.nmalloc(4, (4 * 2) << 2);
 
         validateAttributes(attribs);
@@ -297,7 +284,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         return result;
     }
 
-    private static ContextInfo createLegacyContext(long hDC, int pixelFormat,
+    private static long createLegacyContext(long hDC, int pixelFormat,
             PIXELFORMATDESCRIPTOR pfd, GLData attribs, GLData effective,
             Set<String> wglExtensions, long bufferAddr) throws AWTException {
         applyPixelFormat(hDC, pixelFormat);
@@ -340,7 +327,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             effective.accumAlphaSize = pfd.cAccumAlphaBits();
 
             success = true;
-            return new ContextInfo(context, pixelFormat);
+            return context;
         } finally {
             if (!success) {
                 wglMakeCurrent(null, 0L, 0L);
@@ -349,7 +336,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         }
     }
 
-    private static ContextInfo createExtendedContext(long hDC, int pixelFormat,
+    private static long createExtendedContext(long hDC, int pixelFormat,
             PIXELFORMATDESCRIPTOR pfd, GLData attribs, GLData effective,
             Set<String> wglExtensions, long bufferAddr) throws AWTException {
         requireExtension(wglExtensions, "WGL_ARB_create_context",
@@ -489,7 +476,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             configureSwapGroup(attribs, wglExtensions, bufferAddr, hDC);
             readEffectiveContext(attribs, effective, wglExtensions, bufferAddr);
             success = true;
-            return new ContextInfo(context, pixelFormat);
+            return context;
         } finally {
             if (!success) {
                 wglMakeCurrent(null, 0L, 0L);
@@ -726,8 +713,8 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                 throw new AWTException("JAWT returned an invalid Win32 drawing surface");
             }
             if (currentHwnd != hwnd) {
-                applyPixelFormat(currentHdc, pixelFormat);
-                hwnd = currentHwnd;
+                throw new AWTException(
+                        "AWT recreated the canvas peer (HWND changed); the OpenGL context must be recreated");
             }
             this.ds = ds;
             this.dsi = dsi;
@@ -811,7 +798,6 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     public void dispose() {
         canvas = null;
         hwnd = 0L;
-        pixelFormat = 0;
     }
 
 }
