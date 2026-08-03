@@ -8,12 +8,15 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 
+import java.awt.AWTException;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.Robot;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -31,6 +34,8 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 import static org.lwjgl.opengl.GL.createCapabilities;
 import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
@@ -71,6 +76,8 @@ import static org.lwjgl.opengl.EXTFramebufferObject.glGenRenderbuffersEXT;
 import static org.lwjgl.opengl.EXTFramebufferObject.glRenderbufferStorageEXT;
 
 public class CompareScreenshotTest {
+
+    private static final long SCREEN_STABILITY_TIMEOUT_MILLIS = 5_000L;
 
     static {
         try {
@@ -149,6 +156,56 @@ public class CompareScreenshotTest {
         compareWithScreenshot(testInfo, frame, canvas);
     }
 
+    @Test
+    @EnabledOnOs({OS.LINUX, OS.WINDOWS})
+    void robotCapturesCanvasInContentPane(TestInfo testInfo)
+            throws IOException, InvocationTargetException, InterruptedException {
+        DemoCanvas canvas = showSingleCanvas();
+        compareDisplayedWithScreenshot(testInfo, "canvasInContentPane", frame, canvas);
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX, OS.WINDOWS})
+    void robotCapturesCanvasInSplitPane(TestInfo testInfo)
+            throws IOException, InvocationTargetException, InterruptedException {
+        DemoCanvas[] canvases = showSplitCanvases();
+        compareDisplayedWithScreenshot(testInfo, "canvasInSplitPane", frame, canvases);
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX, OS.WINDOWS})
+    void robotCapturesReAddedCanvas(TestInfo testInfo)
+            throws IOException, InvocationTargetException, InterruptedException {
+        DemoCanvas canvas = showSingleCanvas();
+
+        SwingUtilities.invokeAndWait(canvas::render);
+        SwingUtilities.invokeAndWait(() -> {
+            frame.remove(canvas);
+            frame.add(canvas, BorderLayout.CENTER);
+            frame.pack();
+        });
+
+        compareDisplayedWithScreenshot(testInfo, "reAddCanvas", frame, canvas);
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX, OS.WINDOWS})
+    void robotCapturesHiddenAndShownCanvas(TestInfo testInfo)
+            throws IOException, InvocationTargetException, InterruptedException {
+        DemoCanvas canvas = showSingleCanvas();
+
+        SwingUtilities.invokeAndWait(canvas::render);
+        SwingUtilities.invokeAndWait(frame::pack);
+
+        compareDisplayedWithScreenshot(testInfo, "hideAndShowCanvas", frame, canvas);
+
+        SwingUtilities.invokeAndWait(() -> canvas.setVisible(false));
+        compareDisplayedWithScreenshot(testInfo, "hideAndShowCanvas", frame);
+
+        SwingUtilities.invokeAndWait(() -> canvas.setVisible(true));
+        compareDisplayedWithScreenshot(testInfo, "hideAndShowCanvas", frame, canvas);
+    }
+
     private DemoCanvas showSingleCanvas() throws InvocationTargetException, InterruptedException {
         DemoCanvas[] result = new DemoCanvas[1];
         SwingUtilities.invokeAndWait(() -> {
@@ -217,7 +274,26 @@ public class CompareScreenshotTest {
     }
 
     private void compareWithScreenshot(TestInfo testInfo, JFrame frame, AWTGLCanvas... canvases) throws IOException {
-        BufferedImage background = captureContentPane(frame, canvases);
+        String expectedMethodName = testInfo.getTestMethod().map(Method::getName).orElse("unknown");
+        compareWithExpectedScreenshot(testInfo, expectedMethodName, captureContentPane(frame, canvases));
+    }
+
+    private void compareDisplayedWithScreenshot(
+            TestInfo testInfo,
+            String expectedMethodName,
+            JFrame frame,
+            AWTGLCanvas... canvases) throws IOException {
+        compareWithExpectedScreenshot(
+                testInfo,
+                expectedMethodName,
+                captureDisplayedContentPane(frame, canvases));
+    }
+
+    private void compareWithExpectedScreenshot(
+            TestInfo testInfo,
+            String expectedMethodName,
+            BufferedImage background) throws IOException {
+        String actualMethodName = testInfo.getTestMethod().map(Method::getName).orElse("unknown");
 
         String screenShotSuffix = "";
         int screenShotIndex = screenShotIndexMap.compute(testInfo, (info, index) -> index == null ? 1 : index + 1);
@@ -229,24 +305,76 @@ public class CompareScreenshotTest {
                 new File("target"),
                 System.getProperty("os.name") + "_" +
                         testInfo.getTestClass().map(Class::getSimpleName).orElse("unknown") + "_" +
-                        testInfo.getTestMethod().map(Method::getName).orElse("unknown") + screenShotSuffix + ".png"));
+                        actualMethodName + screenShotSuffix + ".png"));
 
-        BufferedImage expectedImage = ImageIO.read(getClass().getResource("/" + testInfo.getTestClass().map(Class::getSimpleName).orElse("unknown") + "_" +
-                testInfo.getTestMethod().map(Method::getName).orElse("unknown") + screenShotSuffix + ".png"));
+        BufferedImage expectedImage = ImageIO.read(getClass().getResource("/"
+                + testInfo.getTestClass().map(Class::getSimpleName).orElse("unknown") + "_"
+                + expectedMethodName + screenShotSuffix + ".png"));
 
         File resultDestination = new File(
                 new File("target"),
                 System.getProperty("os.name") + "_" +
                         testInfo.getTestClass().map(Class::getSimpleName).orElse("unknown") + "_" +
-                        testInfo.getTestMethod().map(Method::getName).orElse("unknown") + screenShotSuffix + "_diff.png");
+                        actualMethodName + screenShotSuffix + "_diff.png");
 
         //Create ImageComparison object for it.
         ImageComparison imageComparison = new ImageComparison(expectedImage, background, resultDestination);
-        // Mac OS has rounded window corners, so ignore a few pixels at the edges.
+        // Ignore a small number of platform-dependent pixels at component boundaries.
         imageComparison.setAllowingPercentOfDifferentPixels(0.02d);
         Assertions.assertEquals(
                 ImageComparisonState.MATCH,
                 imageComparison.compareImages().getImageComparisonState());
+    }
+
+    /**
+     * Captures the pixels presented by the window system. This retains end-to-end
+     * coverage of native canvas placement, visibility and buffer presentation on
+     * platforms where Robot screen capture does not require user permission.
+     */
+    private BufferedImage captureDisplayedContentPane(JFrame frame, AWTGLCanvas... canvases) throws IOException {
+        final Rectangle[] captureBounds = new Rectangle[1];
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                frame.toFront();
+                for (AWTGLCanvas canvas : canvases) {
+                    if (!canvas.isValid()) {
+                        throw new IllegalStateException("Cannot capture an invalid OpenGL canvas");
+                    }
+                    canvas.render();
+                }
+
+                Container contentPane = frame.getContentPane();
+                Point location = contentPane.getLocationOnScreen();
+                captureBounds[0] = new Rectangle(
+                        location.x,
+                        location.y,
+                        contentPane.getWidth(),
+                        contentPane.getHeight());
+            });
+
+            Robot robot = new Robot();
+            robot.waitForIdle();
+            robot.delay(100);
+            BufferedImage previous = robot.createScreenCapture(captureBounds[0]);
+            long deadline = System.currentTimeMillis() + SCREEN_STABILITY_TIMEOUT_MILLIS;
+            while (System.currentTimeMillis() < deadline) {
+                robot.delay(50);
+                BufferedImage current = robot.createScreenCapture(captureBounds[0]);
+                if (new ImageComparison(previous, current).compareImages().getDifferencePercent() == 0.0f) {
+                    return current;
+                }
+                previous = current;
+            }
+            throw new IOException("The displayed test window did not become stable within "
+                    + SCREEN_STABILITY_TIMEOUT_MILLIS + " ms");
+        } catch (AWTException e) {
+            throw new IOException("Failed to capture the displayed test window", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while capturing the displayed test window", e);
+        } catch (InvocationTargetException e) {
+            throw new IOException("Failed to prepare the displayed test window", e.getCause());
+        }
     }
 
     private BufferedImage captureContentPane(JFrame frame, AWTGLCanvas... canvases) throws IOException {
