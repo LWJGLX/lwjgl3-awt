@@ -17,6 +17,19 @@ public interface PlatformGLCanvas {
     boolean delayBeforeSwapNV(float seconds);
 
     /**
+     * Writes the current default-framebuffer width and height to {@code size}.
+     *
+     * <p>This is called while the JAWT drawing surface is locked and the context is current. Implementations should
+     * prefer native drawing-surface dimensions over cached AWT component dimensions.</p>
+     *
+     * @param size an array with room for the width and height
+     * @return {@code true} when authoritative dimensions were available
+     */
+    default boolean getFramebufferSize(int[] size) {
+        return false;
+    }
+
+    /**
      * Acquires and locks a JAWT drawing surface for the current render operation.
      */
     void lock() throws AWTException;

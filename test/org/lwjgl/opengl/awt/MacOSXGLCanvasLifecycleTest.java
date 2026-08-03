@@ -10,8 +10,56 @@ import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import java.awt.Dimension;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.lwjgl.opengl.CGL.CGLDisable;
+import static org.lwjgl.opengl.CGL.CGLGetParameter;
+import static org.lwjgl.opengl.CGL.CGLIsEnabled;
+import static org.lwjgl.opengl.CGL.kCGLCESurfaceBackingSize;
+import static org.lwjgl.opengl.CGL.kCGLCPSurfaceBackingSize;
+import static org.lwjgl.opengl.CGL.kCGLNoError;
+
 @EnabledOnOs(OS.MAC)
 class MacOSXGLCanvasLifecycleTest {
+
+    @Test
+    void configuresInitialSurfaceBackingSizeBeforeInitGL() throws Exception {
+        FrameState state = showSingleCanvas();
+        try {
+            renderCanvases(state);
+            TestCanvas canvas = state.canvases[0];
+            assertTrue(canvas.surfaceBackingSizeEnabled);
+            assertEquals(canvas.getFramebufferWidth(), canvas.surfaceBackingWidth);
+            assertEquals(canvas.getFramebufferHeight(), canvas.surfaceBackingHeight);
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
+
+    @Test
+    void reassertsSurfaceBackingSizeOnEveryContextActivation() throws Exception {
+        FrameState state = showSingleCanvas();
+        try {
+            renderCanvases(state);
+            TestCanvas canvas = state.canvases[0];
+            canvas.runInContext(() -> assertEquals(
+                    kCGLNoError,
+                    CGLDisable(canvas.context, kCGLCESurfaceBackingSize)));
+
+            canvas.runInContext(() -> {
+                int[] enabled = new int[1];
+                assertEquals(kCGLNoError, CGLIsEnabled(canvas.context, kCGLCESurfaceBackingSize, enabled));
+                assertEquals(1, enabled[0]);
+
+                int[] size = new int[2];
+                assertEquals(kCGLNoError, CGLGetParameter(canvas.context, kCGLCPSurfaceBackingSize, size));
+                assertEquals(canvas.getFramebufferWidth(), size[0]);
+                assertEquals(canvas.getFramebufferHeight(), size[1]);
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
 
     @Test
     void createsMultipleCanvasesAfterDisposingPreviousWindow() throws Exception {
@@ -94,9 +142,21 @@ class MacOSXGLCanvasLifecycleTest {
     }
 
     private static class TestCanvas extends AWTGLCanvas {
+        boolean surfaceBackingSizeEnabled;
+        int surfaceBackingWidth;
+        int surfaceBackingHeight;
+
         @Override
         public void initGL() {
             GL.createCapabilities();
+            int[] enabled = new int[1];
+            assertEquals(kCGLNoError, CGLIsEnabled(context, kCGLCESurfaceBackingSize, enabled));
+            surfaceBackingSizeEnabled = enabled[0] != 0;
+
+            int[] size = new int[2];
+            assertEquals(kCGLNoError, CGLGetParameter(context, kCGLCPSurfaceBackingSize, size));
+            surfaceBackingWidth = size[0];
+            surfaceBackingHeight = size[1];
         }
 
         @Override

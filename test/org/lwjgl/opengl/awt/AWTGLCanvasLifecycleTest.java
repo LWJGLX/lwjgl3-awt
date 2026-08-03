@@ -4,6 +4,12 @@ import org.junit.jupiter.api.Test;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
+import java.awt.GraphicsConfiguration;
+import java.awt.GraphicsDevice;
+import java.awt.Rectangle;
+import java.awt.Transparency;
+import java.awt.geom.AffineTransform;
+import java.awt.image.ColorModel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -20,6 +26,56 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AWTGLCanvasLifecycleTest {
+
+    @Test
+    void initializesFramebufferSizeFromDrawingSurfaceBeforeInitGL() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.framebufferWidth = 640;
+        platform.framebufferHeight = 480;
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            public void initGL() {
+                assertEquals(640, getFramebufferWidth());
+                assertEquals(480, getFramebufferHeight());
+            }
+        };
+
+        canvas.render();
+    }
+
+    @Test
+    void refreshesFramebufferSizeFromDrawingSurfaceBeforeEveryRender() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.framebufferWidth = 320;
+        platform.framebufferHeight = 240;
+        TestCanvas canvas = new TestCanvas(platform);
+
+        canvas.render();
+        assertEquals(320, canvas.getFramebufferWidth());
+        assertEquals(240, canvas.getFramebufferHeight());
+
+        platform.framebufferWidth = 900;
+        platform.framebufferHeight = 600;
+        canvas.render();
+        assertEquals(900, canvas.getFramebufferWidth());
+        assertEquals(600, canvas.getFramebufferHeight());
+    }
+
+    @Test
+    void refreshesFallbackFramebufferSizeWhenGraphicsScaleChanges() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.reportsFramebufferSize = false;
+        ScaledTestCanvas canvas = new ScaledTestCanvas(platform, 201, 101, 1.5, 1.5);
+
+        canvas.render();
+        assertEquals(302, canvas.getFramebufferWidth());
+        assertEquals(152, canvas.getFramebufferHeight());
+
+        canvas.graphicsConfiguration = new TestGraphicsConfiguration(2.0, 2.0);
+        canvas.render();
+        assertEquals(402, canvas.getFramebufferWidth());
+        assertEquals(202, canvas.getFramebufferHeight());
+    }
 
     @Test
     void disposeCanvasDeletesContextBeforeDrawingSurface() {
@@ -296,12 +352,81 @@ class AWTGLCanvasLifecycleTest {
         }
     }
 
+    private static final class ScaledTestCanvas extends TestCanvas {
+        private final int width;
+        private final int height;
+        private GraphicsConfiguration graphicsConfiguration;
+
+        ScaledTestCanvas(PlatformGLCanvas platformCanvas, int width, int height, double scaleX, double scaleY) {
+            super(platformCanvas);
+            this.width = width;
+            this.height = height;
+            this.graphicsConfiguration = new TestGraphicsConfiguration(scaleX, scaleY);
+        }
+
+        @Override
+        public int getWidth() {
+            return width;
+        }
+
+        @Override
+        public int getHeight() {
+            return height;
+        }
+
+        @Override
+        public GraphicsConfiguration getGraphicsConfiguration() {
+            return graphicsConfiguration;
+        }
+    }
+
+    private static final class TestGraphicsConfiguration extends GraphicsConfiguration {
+        private final AffineTransform transform;
+
+        TestGraphicsConfiguration(double scaleX, double scaleY) {
+            transform = AffineTransform.getScaleInstance(scaleX, scaleY);
+        }
+
+        @Override
+        public GraphicsDevice getDevice() {
+            return null;
+        }
+
+        @Override
+        public ColorModel getColorModel() {
+            return ColorModel.getRGBdefault();
+        }
+
+        @Override
+        public ColorModel getColorModel(int transparency) {
+            return transparency == Transparency.OPAQUE ? ColorModel.getRGBdefault() : null;
+        }
+
+        @Override
+        public AffineTransform getDefaultTransform() {
+            return new AffineTransform(transform);
+        }
+
+        @Override
+        public AffineTransform getNormalizingTransform() {
+            return new AffineTransform();
+        }
+
+        @Override
+        public Rectangle getBounds() {
+            return new Rectangle();
+        }
+    }
+
     private static class RecordingPlatformCanvas implements PlatformGLCanvas {
         final List<String> calls = Collections.synchronizedList(new ArrayList<>());
         final CountDownLatch deleteCalled = new CountDownLatch(1);
         RuntimeException deleteFailure;
         long makeCurrentFailureContext = Long.MIN_VALUE;
         long makeCurrentExceptionContext = Long.MIN_VALUE;
+        boolean reportsFramebufferSize = true;
+        int framebufferWidth;
+        int framebufferHeight;
 
         @Override
         public long create(Canvas canvas, GLData data, GLData effective) {
@@ -342,6 +467,16 @@ class AWTGLCanvasLifecycleTest {
         @Override
         public boolean delayBeforeSwapNV(float seconds) {
             return false;
+        }
+
+        @Override
+        public boolean getFramebufferSize(int[] size) {
+            if (!reportsFramebufferSize) {
+                return false;
+            }
+            size[0] = framebufferWidth;
+            size[1] = framebufferHeight;
+            return true;
         }
 
         @Override

@@ -12,6 +12,8 @@ import static org.lwjgl.opengl.GLXEXTCreateContextESProfile.*;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.Arrays;
 import java.util.List;
@@ -35,9 +37,13 @@ import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTX11DrawingSurfaceInfo;
+import org.lwjgl.system.libffi.FFICIF;
 import org.lwjgl.system.linux.X11;
 
+import static org.lwjgl.system.libffi.LibFFI.*;
+
 public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
+	private static final long X_GET_GEOMETRY = X11.getLibrary().getFunctionAddress("XGetGeometry");
 	public static final JAWT awt;
 	static {
 		awt = JAWT.calloc();
@@ -171,6 +177,78 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 	public boolean delayBeforeSwapNV(float seconds) {
 		throw new UnsupportedOperationException("NYI");
+	}
+
+	@Override
+	public boolean getFramebufferSize(int[] size) {
+		if (ds == null || display == 0L || drawable == 0L) {
+			return false;
+		}
+		if (getDrawableSize(display, drawable, size)) {
+			return true;
+		}
+		if (canvas == null) {
+			return false;
+		}
+		JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+		if (dsi == null) {
+			return false;
+		}
+		try {
+			FramebufferSizeUtil.getScaledSize(canvas, dsi.bounds().width(), dsi.bounds().height(), size);
+			return true;
+		} finally {
+			JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
+		}
+	}
+
+	private static boolean getDrawableSize(long display, long drawable, int[] size) {
+		if (X_GET_GEOMETRY == NULL) {
+			return false;
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer argumentTypes = stack.pointers(
+					ffi_type_pointer.address(),
+					ffi_type_ulong.address(),
+					ffi_type_pointer.address(),
+					ffi_type_pointer.address(),
+					ffi_type_pointer.address(),
+					ffi_type_pointer.address(),
+					ffi_type_pointer.address(),
+					ffi_type_pointer.address(),
+					ffi_type_pointer.address());
+			FFICIF cif = FFICIF.malloc(stack);
+			if (ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_sint32, argumentTypes) != FFI_OK) {
+				return false;
+			}
+
+			PointerBuffer root = stack.mallocPointer(1);
+			IntBuffer geometry = stack.mallocInt(6);
+			PointerBuffer values = stack.pointers(
+					display,
+					drawable,
+					memAddress(root),
+					memAddress(geometry, 0),
+					memAddress(geometry, 1),
+					memAddress(geometry, 2),
+					memAddress(geometry, 3),
+					memAddress(geometry, 4),
+					memAddress(geometry, 5));
+			PointerBuffer arguments = stack.mallocPointer(values.remaining());
+			for (int i = 0; i < values.remaining(); i++) {
+				arguments.put(memAddress(values, i));
+			}
+			arguments.flip();
+
+			ByteBuffer result = stack.malloc(Integer.BYTES).order(ByteOrder.nativeOrder());
+			ffi_call(cif, X_GET_GEOMETRY, result, arguments);
+			if (result.getInt(0) == 0) {
+				return false;
+			}
+			size[0] = geometry.get(2);
+			size[1] = geometry.get(3);
+			return true;
+		}
 	}
 
 	public void dispose() {

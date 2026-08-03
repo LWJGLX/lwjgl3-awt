@@ -13,6 +13,7 @@ import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
 import org.lwjgl.system.jawt.JAWTWin32DrawingSurfaceInfo;
 import org.lwjgl.system.windows.PIXELFORMATDESCRIPTOR;
+import org.lwjgl.system.windows.RECT;
 import org.lwjgl.system.windows.User32;
 import org.lwjgl.system.windows.WNDCLASSEX;
 
@@ -62,6 +63,8 @@ import static org.lwjgl.system.windows.WindowsLibrary.HINSTANCE;
  * @author Kai Burjack
  */
 public class PlatformWin32GLCanvas implements PlatformGLCanvas {
+    // LWJGL's User32 binding does not expose GetClientRect, so resolve it directly from user32.dll.
+    private static final long getClientRectAddr = User32.getLibrary().getFunctionAddress("GetClientRect");
     public static final JAWT awt;
     static {
         awt = JAWT.create(MemoryUtil.getAllocator().calloc(1, JAWT.SIZEOF)); // untracked allocation
@@ -679,6 +682,34 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             throw new UnsupportedOperationException("wglDelayBeforeSwapNV is unavailable");
         }
         return callPI(hdc, seconds, wglDelayBeforeSwapNVAddr) == 1;
+    }
+
+    @Override
+    public boolean getFramebufferSize(int[] size) {
+        // Only report while the drawing surface is locked; lock() has then verified that this.hwnd is still the
+        // canvas's live peer window.
+        JAWTDrawingSurfaceInfo dsi = this.dsi;
+        long hwnd = this.hwnd;
+        if (dsi == null || hwnd == 0L) {
+            return false;
+        }
+        // JAWT fills dsi.bounds() from the Java component's user-space width/height. The peer HWND's client rectangle
+        // is the actual drawable extent in physical pixels and avoids rounding at fractional scale factors.
+        if (getClientRectAddr != MemoryUtil.NULL) {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                RECT rect = RECT.malloc(stack);
+                if (callPPI(hwnd, rect.address(), getClientRectAddr) != 0) {
+                    size[0] = rect.right() - rect.left();
+                    size[1] = rect.bottom() - rect.top();
+                    return true;
+                }
+            }
+        }
+        if (canvas == null) {
+            return false;
+        }
+        FramebufferSizeUtil.getScaledSize(canvas, dsi.bounds().width(), dsi.bounds().height(), size);
+        return true;
     }
 
     @Override

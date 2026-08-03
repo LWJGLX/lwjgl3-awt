@@ -42,14 +42,17 @@ public abstract class AWTGLCanvas extends Canvas {
     protected final GLData effective = new GLData();
     protected boolean initCalled;
     private final ReentrantLock lifecycleLock = new ReentrantLock();
-    private int framebufferWidth, framebufferHeight;
+    private volatile int framebufferWidth;
+    private volatile int framebufferHeight;
     private final ComponentListener listener = new ComponentAdapter() {
         @Override
         public void componentResized(ComponentEvent e) {
-            java.awt.geom.AffineTransform t = AWTGLCanvas.this.getGraphicsConfiguration().getDefaultTransform();
-            float sx = (float) t.getScaleX(), sy = (float) t.getScaleY();
-            AWTGLCanvas.this.framebufferWidth = (int) (getWidth() * sx);
-            AWTGLCanvas.this.framebufferHeight = (int) (getHeight() * sy);
+            updateFramebufferSizeFromComponent();
+        }
+
+        @Override
+        public void componentMoved(ComponentEvent e) {
+            updateFramebufferSizeFromComponent();
         }
     };
 
@@ -95,6 +98,7 @@ public abstract class AWTGLCanvas extends Canvas {
     protected AWTGLCanvas(GLData data) {
         this.data = data;
         this.addComponentListener(listener);
+        this.addPropertyChangeListener("graphicsConfiguration", e -> updateFramebufferSizeFromComponent());
     }
 
     protected AWTGLCanvas() {
@@ -118,6 +122,7 @@ public abstract class AWTGLCanvas extends Canvas {
             if (!platformCanvas.makeCurrent(context)) {
                 throw new IllegalStateException("Failed to make the OpenGL context current");
             }
+            updateFramebufferSize();
         } catch (RuntimeException | Error failure) {
             releaseDrawingSurfaceAfterFailure(failure);
             throw failure;
@@ -273,6 +278,23 @@ public abstract class AWTGLCanvas extends Canvas {
 
     public int getFramebufferHeight() {
         return framebufferHeight;
+    }
+
+    private void updateFramebufferSize() {
+        int[] platformFramebufferSize = new int[2];
+        if (platformCanvas.getFramebufferSize(platformFramebufferSize)) {
+            framebufferWidth = Math.max(0, platformFramebufferSize[0]);
+            framebufferHeight = Math.max(0, platformFramebufferSize[1]);
+        } else {
+            updateFramebufferSizeFromComponent();
+        }
+    }
+
+    private void updateFramebufferSizeFromComponent() {
+        int[] size = new int[2];
+        FramebufferSizeUtil.getScaledSize(this, getWidth(), getHeight(), size);
+        framebufferWidth = size[0];
+        framebufferHeight = size[1];
     }
 
     /**
