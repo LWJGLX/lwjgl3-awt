@@ -3,6 +3,7 @@ package org.lwjgl.opengl.awt;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.system.JNI;
@@ -27,10 +28,10 @@ import java.nio.ByteBuffer;
 
 import static java.nio.ByteOrder.nativeOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-import static org.lwjgl.opengl.CGL.CGLDisable;
 import static org.lwjgl.system.MemoryUtil.memAddress;
 import static org.lwjgl.system.libffi.LibFFI.FFI_DEFAULT_ABI;
 import static org.lwjgl.system.libffi.LibFFI.FFI_OK;
@@ -41,11 +42,24 @@ import static org.lwjgl.system.libffi.LibFFI.ffi_type_double;
 import static org.lwjgl.system.libffi.LibFFI.ffi_type_pointer;
 import static org.lwjgl.system.libffi.LibFFI.ffi_type_void;
 import static org.lwjgl.system.macosx.ObjCRuntime.sel_getUid;
+import static org.lwjgl.opengl.CGL.CGLDisable;
 import static org.lwjgl.opengl.CGL.CGLGetParameter;
 import static org.lwjgl.opengl.CGL.CGLIsEnabled;
 import static org.lwjgl.opengl.CGL.kCGLCESurfaceBackingSize;
+import static org.lwjgl.opengl.CGL.kCGLCPSwapInterval;
 import static org.lwjgl.opengl.CGL.kCGLCPSurfaceBackingSize;
 import static org.lwjgl.opengl.CGL.kCGLNoError;
+import static org.lwjgl.opengl.GL11.GL_BACK;
+import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
+import static org.lwjgl.opengl.GL11.GL_FRONT;
+import static org.lwjgl.opengl.GL11.GL_RGBA;
+import static org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE;
+import static org.lwjgl.opengl.GL11.glClear;
+import static org.lwjgl.opengl.GL11.glClearColor;
+import static org.lwjgl.opengl.GL11.glDrawBuffer;
+import static org.lwjgl.opengl.GL11.glFinish;
+import static org.lwjgl.opengl.GL11.glReadBuffer;
+import static org.lwjgl.opengl.GL11.glReadPixels;
 
 @EnabledOnOs(OS.MAC)
 class MacOSXGLCanvasLifecycleTest {
@@ -132,6 +146,66 @@ class MacOSXGLCanvasLifecycleTest {
     }
 
     @Test
+    void appliesSwapIntervalAndPopulatesEffectiveData() throws Exception {
+        GLData data = new GLData();
+        data.majorVersion = 3;
+        data.minorVersion = 2;
+        data.profile = GLData.Profile.CORE;
+        data.doubleBuffer = true;
+        data.swapInterval = 0;
+        data.stencilSize = 8;
+
+        FrameState state = showConfiguredCanvas(data);
+        try {
+            renderCanvases(state);
+            TestCanvas canvas = state.canvases[0];
+            assertEquals(0, canvas.configuredSwapInterval);
+            assertEquals(Integer.valueOf(0), canvas.effective.swapInterval);
+            assertEquals(GLData.API.GL, canvas.effective.api);
+            assertEquals(GLData.Profile.CORE, canvas.effective.profile);
+            assertTrue(canvas.effective.majorVersion >= 3);
+            assertEquals(8, canvas.effective.redSize);
+            assertEquals(8, canvas.effective.greenSize);
+            assertEquals(8, canvas.effective.blueSize);
+            assertEquals(8, canvas.effective.alphaSize);
+            assertTrue(canvas.effective.stencilSize >= 8);
+            assertTrue(canvas.effective.doubleBuffer);
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
+
+    @Test
+    void honorsSingleBufferedPixelFormat() throws Exception {
+        GLData data = new GLData();
+        data.doubleBuffer = false;
+
+        FrameState state = showConfiguredCanvas(data);
+        try {
+            renderCanvases(state);
+            assertFalse(state.canvases[0].effective.doubleBuffer);
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
+
+    @Test
+    void presentsDoubleBufferedFrame() throws Exception {
+        GLData data = new GLData();
+        data.doubleBuffer = true;
+        data.swapInterval = 0;
+
+        FrameState state = showPresentingCanvas(data);
+        try {
+            assertPresentedFrameEventually(state);
+            TestCanvas canvas = state.canvases[0];
+            assertTrue(canvas.effective.doubleBuffer);
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
+
+    @Test
     void updatesNativeLayerFrameWhenCanvasMovesInsideRootPane() throws Exception {
         FrameState state = showMovableCanvas();
         try {
@@ -214,6 +288,36 @@ class MacOSXGLCanvasLifecycleTest {
         return result[0];
     }
 
+    private static FrameState showConfiguredCanvas(GLData data) throws Exception {
+        FrameState[] result = new FrameState[1];
+        SwingUtilities.invokeAndWait(() -> {
+            JFrame frame = new JFrame("macOS configured OpenGL canvas");
+            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+            TestCanvas canvas = new TestCanvas(data);
+            canvas.setPreferredSize(new Dimension(160, 120));
+            frame.add(canvas);
+            frame.pack();
+            frame.setVisible(true);
+            result[0] = new FrameState(frame, new TestCanvas[]{canvas});
+        });
+        return result[0];
+    }
+
+    private static FrameState showPresentingCanvas(GLData data) throws Exception {
+        FrameState[] result = new FrameState[1];
+        SwingUtilities.invokeAndWait(() -> {
+            JFrame frame = new JFrame("macOS double-buffer presentation");
+            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+            TestCanvas canvas = new TestCanvas(data, true);
+            canvas.setPreferredSize(new Dimension(160, 120));
+            frame.add(canvas);
+            frame.pack();
+            frame.setVisible(true);
+            result[0] = new FrameState(frame, new TestCanvas[]{canvas});
+        });
+        return result[0];
+    }
+
     private static FrameState showSplitCanvases() throws Exception {
         FrameState[] result = new FrameState[1];
         SwingUtilities.invokeAndWait(() -> {
@@ -263,6 +367,35 @@ class MacOSXGLCanvasLifecycleTest {
                 canvas.render();
             }
         });
+    }
+
+    private static void assertColorComponent(int expected, int actual, String component) {
+        assertTrue(Math.abs(expected - actual) <= 1,
+                "Expected " + component + " component near " + expected + " but was " + actual);
+    }
+
+    private static void assertPresentedFrameEventually(FrameState state) throws Exception {
+        TestCanvas canvas = state.canvases[0];
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        do {
+            renderCanvases(state);
+            if (colorComponentMatches(64, canvas.frontPixel[0])
+                    && colorComponentMatches(128, canvas.frontPixel[1])
+                    && colorComponentMatches(191, canvas.frontPixel[2])
+                    && colorComponentMatches(255, canvas.frontPixel[3])) {
+                return;
+            }
+            Thread.sleep(10L);
+        } while (System.nanoTime() < deadline);
+
+        assertColorComponent(64, canvas.frontPixel[0], "red");
+        assertColorComponent(128, canvas.frontPixel[1], "green");
+        assertColorComponent(191, canvas.frontPixel[2], "blue");
+        assertColorComponent(255, canvas.frontPixel[3], "alpha");
+    }
+
+    private static boolean colorComponentMatches(int expected, int actual) {
+        return Math.abs(expected - actual) <= 1;
     }
 
     private static double[] expectedLayerFrame(TestCanvas canvas) throws Exception {
@@ -424,6 +557,23 @@ class MacOSXGLCanvasLifecycleTest {
         boolean surfaceBackingSizeEnabled;
         int surfaceBackingWidth;
         int surfaceBackingHeight;
+        int configuredSwapInterval;
+        final boolean verifyPresentation;
+        final int[] frontPixel = new int[4];
+
+        TestCanvas() {
+            verifyPresentation = false;
+        }
+
+        TestCanvas(GLData data) {
+            super(data);
+            verifyPresentation = false;
+        }
+
+        TestCanvas(GLData data, boolean verifyPresentation) {
+            super(data);
+            this.verifyPresentation = verifyPresentation;
+        }
 
         @Override
         public void initGL() {
@@ -436,10 +586,38 @@ class MacOSXGLCanvasLifecycleTest {
             assertEquals(kCGLNoError, CGLGetParameter(context, kCGLCPSurfaceBackingSize, size));
             surfaceBackingWidth = size[0];
             surfaceBackingHeight = size[1];
+
+            int[] swapInterval = new int[1];
+            assertEquals(kCGLNoError, CGLGetParameter(context, kCGLCPSwapInterval, swapInterval));
+            configuredSwapInterval = swapInterval[0];
         }
 
         @Override
         public void paintGL() {
+            if (verifyPresentation) {
+                glDrawBuffer(GL_FRONT);
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glFinish();
+
+                glDrawBuffer(GL_BACK);
+                glClearColor(0.25f, 0.5f, 0.75f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+                swapBuffers();
+                // CGLFlushDrawable schedules the swap; finish before inspecting the new front buffer.
+                glFinish();
+
+                glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                ByteBuffer pixel = BufferUtils.createByteBuffer(4);
+                glReadBuffer(GL_FRONT);
+                glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+                for (int i = 0; i < frontPixel.length; i++) {
+                    frontPixel[i] = pixel.get(i) & 0xFF;
+                }
+                return;
+            }
             swapBuffers();
         }
     }
