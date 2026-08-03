@@ -9,9 +9,13 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.ComponentListener;
 import java.util.concurrent.Callable;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * An AWT {@link Canvas} that supports to be drawn on using OpenGL.
+ *
+ * <p>Rendering and context callbacks execute while this canvas's lifecycle lock is held. They must not synchronously
+ * wait for AWT's event-dispatch thread, because that thread may be waiting to remove or dispose this canvas.</p>
  * 
  * @author Kai Burjack
  */
@@ -36,6 +40,7 @@ public abstract class AWTGLCanvas extends Canvas {
     protected final GLData data;
     protected final GLData effective = new GLData();
     protected boolean initCalled;
+    private final ReentrantLock lifecycleLock = new ReentrantLock();
     private int framebufferWidth, framebufferHeight;
     private final ComponentListener listener = new ComponentAdapter() {
         @Override
@@ -49,8 +54,13 @@ public abstract class AWTGLCanvas extends Canvas {
 
     @Override
     public void removeNotify() {
-        super.removeNotify();
-        disposeCanvas();
+        lifecycleLock.lock();
+        try {
+            super.removeNotify();
+            disposeCanvas();
+        } finally {
+            lifecycleLock.unlock();
+        }
     }
 
     @Override
@@ -61,19 +71,24 @@ public abstract class AWTGLCanvas extends Canvas {
     /**
      * Deletes the OpenGL context and releases platform-specific canvas resources.
      *
-     * <p>This method must not run concurrently with rendering. Applications that render on a dedicated thread should
-     * override it to arrange cleanup on that thread.</p>
+     * <p>If rendering is in progress on another thread, this method waits for that operation to finish before deleting
+     * the context. Applications remain responsible for stopping any render loop before disposing the canvas.</p>
      */
     public void disposeCanvas() {
+        lifecycleLock.lock();
         try {
-            if (context != 0L) {
-                platformCanvas.deleteContext(context);
+            try {
+                if (context != 0L) {
+                    platformCanvas.deleteContext(context);
+                }
+            } finally {
+                // prepare for a possible re-adding
+                context = 0L;
+                initCalled = false;
+                platformCanvas.dispose();
             }
         } finally {
-            // prepare for a possible re-adding
-            context = 0L;
-            initCalled = false;
-            platformCanvas.dispose();
+            lifecycleLock.unlock();
         }
     }
     protected AWTGLCanvas(GLData data) {
@@ -111,33 +126,54 @@ public abstract class AWTGLCanvas extends Canvas {
     }
 
     public <T> T executeInContext(Callable<T> callable) throws Exception {
-        beforeRender();
+        lifecycleLock.lock();
         try {
-            return callable.call();
+            beforeRender();
+            try {
+                return callable.call();
+            } finally {
+                afterRender();
+            }
         } finally {
-            afterRender();
+            lifecycleLock.unlock();
         }
     }
 
     public void runInContext(Runnable runnable) {
-        beforeRender();
+        lifecycleLock.lock();
         try {
-            runnable.run();
+            beforeRender();
+            try {
+                runnable.run();
+            } finally {
+                afterRender();
+            }
         } finally {
-            afterRender();
+            lifecycleLock.unlock();
         }
     }
 
+    /**
+     * Makes this canvas's context current and invokes {@link #initGL()} when necessary, followed by {@link #paintGL()}.
+     *
+     * <p>The callbacks run while the lifecycle lock is held and must not call {@link EventQueue#invokeAndWait(Runnable)}
+     * or otherwise wait synchronously for the event-dispatch thread.</p>
+     */
     public void render() {
-        beforeRender();
+        lifecycleLock.lock();
         try {
-            if (!initCalled) {
-                initGL();
-                initCalled = true;
+            beforeRender();
+            try {
+                if (!initCalled) {
+                    initGL();
+                    initCalled = true;
+                }
+                paintGL();
+            } finally {
+                afterRender();
             }
-            paintGL();
         } finally {
-            afterRender();
+            lifecycleLock.unlock();
         }
     }
 
@@ -159,8 +195,19 @@ public abstract class AWTGLCanvas extends Canvas {
         return framebufferHeight;
     }
 
+    /**
+     * Swaps this canvas's buffers without making its context current.
+     *
+     * <p>Call this only while the context is current, normally from {@link #paintGL()} or a callback passed to
+     * {@link #runInContext(Runnable)} or {@link #executeInContext(Callable)}.</p>
+     */
     public final void swapBuffers() {
-        platformCanvas.swapBuffers();
+        lifecycleLock.lock();
+        try {
+            platformCanvas.swapBuffers();
+        } finally {
+            lifecycleLock.unlock();
+        }
     }
     
     /**
