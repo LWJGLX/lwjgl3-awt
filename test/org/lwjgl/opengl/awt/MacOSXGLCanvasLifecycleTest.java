@@ -3,16 +3,42 @@ package org.lwjgl.opengl.awt;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
+import org.lwjgl.PointerBuffer;
 import org.lwjgl.opengl.GL;
+import org.lwjgl.system.JNI;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.Platform;
+import org.lwjgl.system.libffi.FFICIF;
+import org.lwjgl.system.libffi.FFIType;
+import org.lwjgl.system.macosx.ObjCRuntime;
 
 import javax.swing.JFrame;
+import javax.swing.JPanel;
+import javax.swing.JRootPane;
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import java.awt.Dimension;
+import java.awt.Point;
+import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
 
+import static java.nio.ByteOrder.nativeOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.lwjgl.opengl.CGL.CGLDisable;
+import static org.lwjgl.system.MemoryUtil.memAddress;
+import static org.lwjgl.system.libffi.LibFFI.FFI_DEFAULT_ABI;
+import static org.lwjgl.system.libffi.LibFFI.FFI_OK;
+import static org.lwjgl.system.libffi.LibFFI.FFI_TYPE_STRUCT;
+import static org.lwjgl.system.libffi.LibFFI.ffi_call;
+import static org.lwjgl.system.libffi.LibFFI.ffi_prep_cif;
+import static org.lwjgl.system.libffi.LibFFI.ffi_type_double;
+import static org.lwjgl.system.libffi.LibFFI.ffi_type_pointer;
+import static org.lwjgl.system.libffi.LibFFI.ffi_type_void;
+import static org.lwjgl.system.macosx.ObjCRuntime.sel_getUid;
 import static org.lwjgl.opengl.CGL.CGLGetParameter;
 import static org.lwjgl.opengl.CGL.CGLIsEnabled;
 import static org.lwjgl.opengl.CGL.kCGLCESurfaceBackingSize;
@@ -56,6 +82,71 @@ class MacOSXGLCanvasLifecycleTest {
                 assertEquals(canvas.getFramebufferWidth(), size[0]);
                 assertEquals(canvas.getFramebufferHeight(), size[1]);
             });
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
+
+    @Test
+    void clearsIntermediateLayerReferenceWhenCanvasIsDisposed() throws Exception {
+        FrameState state = showSingleCanvas();
+        boolean disposed = false;
+        try {
+            renderCanvases(state);
+            TestCanvas canvas = state.canvases[0];
+            assertNotEquals(0L, getIntermediateLayer(canvas));
+
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+            disposed = true;
+            assertEquals(0L, getIntermediateLayer(canvas));
+        } finally {
+            if (!disposed) {
+                SwingUtilities.invokeAndWait(state.frame::dispose);
+            }
+        }
+    }
+
+    @Test
+    void updatesNativeLayerFrameWhenCanvasMovesInsideRootPane() throws Exception {
+        FrameState state = showMovableCanvas();
+        try {
+            renderCanvases(state);
+
+            double[] initialFrame = expectedLayerFrame(state.canvases[0]);
+            assertLayerFrameEventually(state.canvases[0], initialFrame);
+
+            SwingUtilities.invokeAndWait(() -> {
+                TestCanvas canvas = state.canvases[0];
+                canvas.setLocation(canvas.getX() + 80, canvas.getY());
+            });
+
+            double[] movedFrame = expectedLayerFrame(state.canvases[0]);
+            assertNotEquals(initialFrame[0], movedFrame[0], "The test must move the canvas in its root pane");
+            long layer = getIntermediateLayer(state.canvases[0]);
+            SwingUtilities.invokeAndWait(() -> writeLayerFrame(layer, initialFrame));
+            assertLayerFrameEventually(state.canvases[0], initialFrame);
+
+            renderCanvases(state);
+            assertLayerFrameEventually(state.canvases[0], movedFrame);
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
+
+    @Test
+    void keepsOpenGLLayerAtCanvasSize() throws Exception {
+        FrameState state = showMovableCanvas();
+        try {
+            renderCanvases(state);
+            TestCanvas canvas = state.canvases[0];
+            assertEquals(0L, readAutoresizingMask(getOpenGLLayer(canvas)));
+            assertOpenGLLayerFrameEventually(canvas, new double[]{0.0, 0.0, 160.0, 120.0});
+
+            SwingUtilities.invokeAndWait(() -> canvas.setSize(240, 160));
+            renderCanvases(state);
+
+            assertEquals(0L, readAutoresizingMask(getOpenGLLayer(canvas)));
+            assertOpenGLLayerFrameEventually(canvas, new double[]{0.0, 0.0, 240.0, 160.0});
         } finally {
             SwingUtilities.invokeAndWait(state.frame::dispose);
         }
@@ -117,6 +208,24 @@ class MacOSXGLCanvasLifecycleTest {
         return result[0];
     }
 
+    private static FrameState showMovableCanvas() throws Exception {
+        FrameState[] result = new FrameState[1];
+        SwingUtilities.invokeAndWait(() -> {
+            JFrame frame = new JFrame("macOS dynamic OpenGL layer bounds");
+            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+
+            TestCanvas canvas = createCanvas();
+            JPanel content = new JPanel(null);
+            canvas.setBounds(40, 40, 160, 120);
+            content.add(canvas);
+            frame.setContentPane(content);
+            frame.setSize(480, 280);
+            frame.setVisible(true);
+            result[0] = new FrameState(frame, new TestCanvas[]{canvas});
+        });
+        return result[0];
+    }
+
     private static TestCanvas createCanvas() {
         TestCanvas canvas = new TestCanvas();
         canvas.setPreferredSize(new Dimension(160, 120));
@@ -129,6 +238,151 @@ class MacOSXGLCanvasLifecycleTest {
                 canvas.render();
             }
         });
+    }
+
+    private static double[] expectedLayerFrame(TestCanvas canvas) throws Exception {
+        double[][] result = new double[1][];
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane rootPane = SwingUtilities.getRootPane(canvas);
+            Point point = SwingUtilities.convertPoint(canvas, new Point(), rootPane);
+            result[0] = new double[]{
+                    point.x,
+                    rootPane.getHeight() - point.y - canvas.getHeight(),
+                    canvas.getWidth(),
+                    canvas.getHeight()
+            };
+        });
+        return result[0];
+    }
+
+    private static void assertLayerFrameEventually(TestCanvas canvas, double[] expected) throws Exception {
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        long layer = getIntermediateLayer(canvas);
+        double[] actual;
+        do {
+            actual = readLayerFrame(layer);
+            if (framesEqual(expected, actual)) {
+                return;
+            }
+            Thread.sleep(10L);
+        } while (System.nanoTime() < deadline);
+        fail("Expected native layer frame " + formatFrame(expected) + " but was " + formatFrame(actual));
+    }
+
+    private static void assertOpenGLLayerFrameEventually(TestCanvas canvas, double[] expected) throws Exception {
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        double[] actual;
+        do {
+            actual = readLayerFrame(getOpenGLLayer(canvas));
+            if (framesEqual(expected, actual)) {
+                return;
+            }
+            Thread.sleep(10L);
+        } while (System.nanoTime() < deadline);
+        fail("Expected native OpenGL layer frame " + formatFrame(expected) + " but was " + formatFrame(actual));
+    }
+
+    private static long getIntermediateLayer(TestCanvas canvas) throws Exception {
+        return getPlatformField(canvas, "interLayer");
+    }
+
+    private static long getOpenGLLayer(TestCanvas canvas) throws Exception {
+        long view = getPlatformField(canvas, "view");
+        long objcMsgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
+        return JNI.invokePPP(view, sel_getUid("layer"), objcMsgSend);
+    }
+
+    private static long getPlatformField(TestCanvas canvas, String name) throws Exception {
+        Field field = PlatformMacOSXGLCanvas.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.getLong(canvas.platformCanvas);
+    }
+
+    private static long readAutoresizingMask(long layer) {
+        long objcMsgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
+        return JNI.invokePPP(layer, sel_getUid("autoresizingMask"), objcMsgSend);
+    }
+
+    private static double[] readLayerFrame(long layer) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            FFIType cgRect = createCGRectType(stack);
+            PointerBuffer argumentTypes = stack.pointers(
+                    ffi_type_pointer.address(),
+                    ffi_type_pointer.address());
+
+            FFICIF cif = FFICIF.malloc(stack);
+            int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, cgRect, argumentTypes);
+            if (status != FFI_OK) {
+                throw new IllegalStateException("ffi_prep_cif failed: " + status);
+            }
+
+            PointerBuffer pointerValues = stack.pointers(layer, sel_getUid("frame"));
+            PointerBuffer arguments = stack.pointers(
+                    memAddress(pointerValues, 0),
+                    memAddress(pointerValues, 1));
+            ByteBuffer frame = stack.malloc(4 * Double.BYTES).order(nativeOrder());
+            Platform.Architecture architecture = Platform.getArchitecture();
+            // Intel macOS returns a CGRect indirectly; arm64 uses the ordinary Objective-C message entry point.
+            String messageFunction = architecture == Platform.Architecture.X64
+                    || architecture == Platform.Architecture.X86
+                    ? "objc_msgSend_stret"
+                    : "objc_msgSend";
+            ffi_call(cif, ObjCRuntime.getLibrary().getFunctionAddress(messageFunction), frame, arguments);
+            return new double[]{
+                    frame.getDouble(0),
+                    frame.getDouble(Double.BYTES),
+                    frame.getDouble(2 * Double.BYTES),
+                    frame.getDouble(3 * Double.BYTES)
+            };
+        }
+    }
+
+    private static void writeLayerFrame(long layer, double[] frame) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            FFIType cgRect = createCGRectType(stack);
+            PointerBuffer argumentTypes = stack.pointers(
+                    ffi_type_pointer.address(),
+                    ffi_type_pointer.address(),
+                    cgRect.address());
+
+            FFICIF cif = FFICIF.malloc(stack);
+            int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_void, argumentTypes);
+            if (status != FFI_OK) {
+                throw new IllegalStateException("ffi_prep_cif failed: " + status);
+            }
+
+            java.nio.DoubleBuffer frameValue = stack.doubles(frame[0], frame[1], frame[2], frame[3]);
+            PointerBuffer pointerValues = stack.pointers(layer, sel_getUid("setFrame:"));
+            PointerBuffer arguments = stack.pointers(
+                    memAddress(pointerValues, 0),
+                    memAddress(pointerValues, 1),
+                    memAddress(frameValue));
+            ffi_call(cif, ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend"), null, arguments);
+        }
+    }
+
+    private static FFIType createCGRectType(MemoryStack stack) {
+        PointerBuffer elements = stack.mallocPointer(5);
+        elements.put(ffi_type_double.address());
+        elements.put(ffi_type_double.address());
+        elements.put(ffi_type_double.address());
+        elements.put(ffi_type_double.address());
+        elements.put(MemoryUtil.NULL);
+        elements.flip();
+        return FFIType.calloc(stack).type(FFI_TYPE_STRUCT).elements(elements);
+    }
+
+    private static boolean framesEqual(double[] expected, double[] actual) {
+        for (int i = 0; i < expected.length; i++) {
+            if (Math.abs(expected[i] - actual[i]) > 0.01) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String formatFrame(double[] frame) {
+        return "[" + frame[0] + ", " + frame[1] + ", " + frame[2] + ", " + frame[3] + "]";
     }
 
     private static class FrameState {

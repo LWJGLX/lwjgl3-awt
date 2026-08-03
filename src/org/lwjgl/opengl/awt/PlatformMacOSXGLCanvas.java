@@ -77,6 +77,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     public static final JAWT awt;
     private static final long objc_msgSend;
+    private static final long objc_autoreleasePoolPush;
+    private static final long objc_autoreleasePoolPop;
     private static final long NSOpenGLPixelFormat;
 
     static {
@@ -85,6 +87,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         if (!JAWT_GetAWT(awt))
             throw new AssertionError("GetAWT failed");
         objc_msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
+        objc_autoreleasePoolPush = ObjCRuntime.getLibrary().getFunctionAddress("objc_autoreleasePoolPush");
+        objc_autoreleasePoolPop = ObjCRuntime.getLibrary().getFunctionAddress("objc_autoreleasePoolPop");
         NSOpenGLPixelFormat = objc_getClass("NSOpenGLPixelFormat");
     }
 
@@ -97,6 +101,10 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private int framebufferWidth;
     private int framebufferHeight;
     private final int[] currentFramebufferSize = new int[2];
+    private int layerX;
+    private int layerY;
+    private int layerWidth;
+    private int layerHeight;
 
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
@@ -120,20 +128,16 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             try {
                 JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
                 try {
-                    // if the canvas is inside e.g. a JSplitPane, the dsi coordinates are wrong and need to be corrected
-                    int x = dsi.bounds().x();
-                    int y = dsi.bounds().y();
                     int width = dsi.bounds().width();
                     int height = dsi.bounds().height();
-                    JRootPane rootPane = SwingUtilities.getRootPane(canvas);
-                    if (rootPane != null) {
-                        Point point = SwingUtilities.convertPoint(canvas, new Point(), rootPane);
-                        x = point.x;
-                        y = rootPane.getHeight() - point.y - height;
-                    }
+                    int[] layerBounds = getLayerBounds(canvas, dsi.bounds().x(), dsi.bounds().y(), width, height);
                     FramebufferSizeUtil.getScaledSize(canvas, width, height, currentFramebufferSize);
                     this.framebufferWidth = currentFramebufferSize[0];
                     this.framebufferHeight = currentFramebufferSize[1];
+                    this.layerX = layerBounds[0];
+                    this.layerY = layerBounds[1];
+                    this.layerWidth = layerBounds[2];
+                    this.layerHeight = layerBounds[3];
 
                     //TODO: we don't really need 100
                     ByteBuffer attribsArray = ByteBuffer.allocateDirect(4 * 100).order(ByteOrder.nativeOrder());
@@ -212,7 +216,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
                     pixelFormat = invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"), MemoryUtil.memAddress(attribsArray), objc_msgSend);
 
-                    view = createNSOpenGLView(pixelFormat, x, y, width, height);
+                    view = createNSOpenGLView(pixelFormat,
+                            layerBounds[0], layerBounds[1], layerBounds[2], layerBounds[3]);
                     // The surface layer belongs to the peer view rather than to the drawing surface info, but
                     // retain it so it stays alive until the context is deleted.
                     surfaceLayer = invokePPP(dsi.platformInfo(), sel_getUid("retain"), objc_msgSend);
@@ -263,16 +268,22 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 true,
                 objc_msgSend);
 
-        // get layer from NSOpenGLView instance and set its auto resizing mask (kCALayerWidthSizable | kCALayerHeightSizable)
+        // get layer from NSOpenGLView instance
         // CALayer *layer = nsOpenGLView.layer;
         long openglViewLayer = JNI.invokePPJ(view,
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
 
-        // [layer setAutoresizingMask:(kCALayerWidthSizable | kCAHeightSizable)];
+        // The layer must not autoresize with the intermediate layer. Core Animation's autoresizing applies the
+        // superlayer's bounds *delta* to its sublayers, and the intermediate layer's frame is applied
+        // asynchronously on AppKit's main thread. Whenever that frame lands after this layer has been added, the
+        // intermediate layer grows from its default 0x0 to width x height, and kCALayerWidthSizable |
+        // kCALayerHeightSizable would add that same width/height to this layer, presenting it at twice its size.
+        // The canvas dimensions are known here and are reapplied by updateLayerBounds, so size the layer directly.
+        // [layer setAutoresizingMask:kCALayerNotSizable];
         JNI.callPPPV(openglViewLayer,
                 ObjCRuntime.sel_getUid("setAutoresizingMask:"),
-                18,
+                0,
                 objc_msgSend);
 
         // create intermediate layer and set its frame
@@ -284,7 +295,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         invokePPP(interLayer, sel_getUid("retain"), objc_msgSend);
 
         // [interLayer setFrame:CGRectMake(x, y, width, height)];
-        setOpenglViewLayersFrame(interLayer, new double[]{x, y, width, height});
+        setFrameOnMainThread(interLayer, x, y, width, height);
 
         // add NSOpenGLView's layer to the intermediate layer
         // [interLayer addSublayer:layer];
@@ -319,6 +330,38 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         invokePPP(invocation, sel_getUid("retain"), objc_msgSend);
         performSelectorOnMainThread(invocation, sel_getUid("invoke"), MemoryUtil.NULL);
         performSelectorOnMainThread(invocation, sel_getUid("release"), MemoryUtil.NULL);
+    }
+
+    /**
+     * Queues a {@code setFrame:} on AppKit's main thread. The target may be a CALayer or an NSView; both take a
+     * CGRect, so the same invocation is used for either.
+     */
+    private static void setFrameOnMainThread(long target, int x, int y, int width, int height) {
+        long autoreleasePool = invokeP(objc_autoreleasePoolPush);
+        try {
+            // Core Animation frame changes must be committed by AppKit's run loop. NSInvocation also copies the
+            // CGRect argument, so the temporary direct buffer can be released as soon as the mutation has been queued.
+            long setFrame = sel_getUid("setFrame:");
+            long methodSignature = invokePPPP(target, sel_getUid("methodSignatureForSelector:"), setFrame, objc_msgSend);
+            long invocation = invokePPPP(objc_getClass("NSInvocation"),
+                    sel_getUid("invocationWithMethodSignature:"), methodSignature, objc_msgSend);
+
+            invokePPPV(invocation, sel_getUid("setTarget:"), target, objc_msgSend);
+            invokePPPV(invocation, sel_getUid("setSelector:"), setFrame, objc_msgSend);
+
+            ByteBuffer frame = BufferUtils.createByteBuffer(4 * Double.BYTES).order(ByteOrder.nativeOrder());
+            frame.putDouble(0, x);
+            frame.putDouble(Double.BYTES, y);
+            frame.putDouble(2 * Double.BYTES, width);
+            frame.putDouble(3 * Double.BYTES, height);
+            JNI.callPPPPV(invocation, sel_getUid("setArgument:atIndex:"), memAddress(frame), 2, objc_msgSend);
+
+            invokePPP(invocation, sel_getUid("retain"), objc_msgSend);
+            performSelectorOnMainThread(invocation, sel_getUid("invoke"), MemoryUtil.NULL);
+            performSelectorOnMainThread(invocation, sel_getUid("release"), MemoryUtil.NULL);
+        } finally {
+            invokePV(autoreleasePool, objc_autoreleasePoolPop);
+        }
     }
 
     private static void performSelectorOnMainThread(long target, long selector, long argument) {
@@ -367,31 +410,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         }
     }
 
-    private static void setOpenglViewLayersFrame(long openglViewLayer, double[] frame) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            FFIType cgRect = createCGRectType(stack);
-            PointerBuffer argumentTypes = stack.pointers(
-                    ffi_type_pointer.address(), // CALayer*
-                    ffi_type_pointer.address(), // setFrame:
-                    cgRect.address());           // CGRect
-
-            FFICIF cif = FFICIF.malloc(stack);
-            int status = ffi_prep_cif(cif, FFI_DEFAULT_ABI, ffi_type_void, argumentTypes);
-            if (status != FFI_OK) {
-                throw new IllegalStateException("ffi_prep_cif failed: " + status);
-            }
-
-            DoubleBuffer frameValue = stack.doubles(frame[0], frame[1], frame[2], frame[3]);
-            PointerBuffer pointerValues = stack.pointers(openglViewLayer, ObjCRuntime.sel_getUid("setFrame:"));
-            PointerBuffer arguments = stack.pointers(
-                    memAddress(pointerValues, 0),
-                    memAddress(pointerValues, 1),
-                    memAddress(frameValue));
-
-            ffi_call(cif, objc_msgSend, null, arguments);
-        }
-    }
-
     private static FFIType createCGRectType(MemoryStack stack) {
         PointerBuffer elements = stack.mallocPointer(5);
         elements.put(ffi_type_double.address());
@@ -414,6 +432,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         long view = this.view;
         long surfaceLayer = this.surfaceLayer;
         this.view = 0L;
+        this.interLayer = 0L;
         this.surfaceLayer = 0L;
 
         // Keep teardown ordered behind any pending layer updates and run it on AppKit's main thread. Clearing an
@@ -454,11 +473,48 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 }
                 this.framebufferWidth = Math.max(0, currentFramebufferSize[0]);
                 this.framebufferHeight = Math.max(0, currentFramebufferSize[1]);
+                int[] layerBounds = getLayerBounds(canvas, dsi.bounds().x(), dsi.bounds().y(), width, height);
+                updateLayerBounds(layerBounds);
             } finally {
                 JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
             }
         }
         return true;
+    }
+
+    private void updateLayerBounds(int[] bounds) {
+        if (bounds[0] == layerX && bounds[1] == layerY
+                && bounds[2] == layerWidth && bounds[3] == layerHeight) {
+            return;
+        }
+        boolean resized = bounds[2] != layerWidth || bounds[3] != layerHeight;
+        layerX = bounds[0];
+        layerY = bounds[1];
+        layerWidth = bounds[2];
+        layerHeight = bounds[3];
+        if (interLayer != 0L) {
+            setFrameOnMainThread(interLayer, layerX, layerY, layerWidth, layerHeight);
+        }
+        if (resized && view != 0L) {
+            // The OpenGL layer does not autoresize with the intermediate layer, so it has to follow the canvas
+            // explicitly. Resizing the view keeps NSOpenGLView's own drawable in step with its layer.
+            setFrameOnMainThread(view, 0, 0, layerWidth, layerHeight);
+            setFrameOnMainThread(invokePPP(view, sel_getUid("layer"), objc_msgSend),
+                    0, 0, layerWidth, layerHeight);
+        }
+    }
+
+    private static int[] getLayerBounds(Canvas canvas, int x, int y, int width, int height) {
+        // JAWT reports incorrect coordinates for canvases nested in containers such as JSplitPane.
+        // These component reads may occur off the EDT. A concurrent layout can yield one stale frame, but the bounds
+        // are sampled again on the next context activation and converge without blocking AppKit or AWT.
+        JRootPane rootPane = SwingUtilities.getRootPane(canvas);
+        if (rootPane != null) {
+            Point point = SwingUtilities.convertPoint(canvas, new Point(), rootPane);
+            x = point.x;
+            y = rootPane.getHeight() - point.y - height;
+        }
+        return new int[]{x, y, width, height};
     }
 
     @Override
