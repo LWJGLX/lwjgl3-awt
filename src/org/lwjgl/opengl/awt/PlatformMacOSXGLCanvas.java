@@ -15,7 +15,6 @@ import org.lwjgl.system.macosx.ObjCRuntime;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.HierarchyEvent;
-import java.awt.geom.AffineTransform;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.DoubleBuffer;
@@ -95,8 +94,9 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private long interLayer;
     private long surfaceLayer;
     private boolean hierarchyListenerAdded;
-    private int width;
-    private int height;
+    private int framebufferWidth;
+    private int framebufferHeight;
+    private final int[] currentFramebufferSize = new int[2];
 
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
@@ -131,8 +131,9 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                         x = point.x;
                         y = rootPane.getHeight() - point.y - height;
                     }
-                    this.width = width;
-                    this.height = height;
+                    FramebufferSizeUtil.getScaledSize(canvas, width, height, currentFramebufferSize);
+                    this.framebufferWidth = currentFramebufferSize[0];
+                    this.framebufferHeight = currentFramebufferSize[1];
 
                     //TODO: we don't really need 100
                     ByteBuffer attribsArray = ByteBuffer.allocateDirect(4 * 100).order(ByteOrder.nativeOrder());
@@ -438,23 +439,35 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             try {
                 int width = dsi.bounds().width();
                 int height = dsi.bounds().height();
-                if (width != this.width || height != this.height) {
-                    // [NSOpenGLCotext update] seems bugged. Updating renderer context with CGL works.
-                    AffineTransform transform = canvas.getGraphicsConfiguration().getDefaultTransform();
-                    int backingWidth = (int) (width * transform.getScaleX());
-                    int backingHeight = (int) (height * transform.getScaleY());
-                    if (CGLSetParameter(context, kCGLCPSurfaceBackingSize,
-                            new int[]{backingWidth, backingHeight}) != kCGLNoError
-                            || CGLEnable(context, kCGLCESurfaceBackingSize) != kCGLNoError) {
-                        return false;
-                    }
-                    this.width = width;
-                    this.height = height;
+                FramebufferSizeUtil.getScaledSize(canvas, width, height, currentFramebufferSize);
+                int backingWidth = currentFramebufferSize[0];
+                int backingHeight = currentFramebufferSize[1];
+                // AppKit may recreate a layer-backed drawable without changing the component dimensions, so keep
+                // the CGL backing-size override authoritative on every context activation.
+                if (CGLSetParameter(context, kCGLCPSurfaceBackingSize,
+                        new int[]{backingWidth, backingHeight}) != kCGLNoError
+                        || CGLEnable(context, kCGLCESurfaceBackingSize) != kCGLNoError) {
+                    return false;
                 }
+                if (CGLGetParameter(context, kCGLCPSurfaceBackingSize, currentFramebufferSize) != kCGLNoError) {
+                    return false;
+                }
+                this.framebufferWidth = Math.max(0, currentFramebufferSize[0]);
+                this.framebufferHeight = Math.max(0, currentFramebufferSize[1]);
             } finally {
                 JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
             }
         }
+        return true;
+    }
+
+    @Override
+    public boolean getFramebufferSize(int[] size) {
+        if (canvas == null) {
+            return false;
+        }
+        size[0] = framebufferWidth;
+        size[1] = framebufferHeight;
         return true;
     }
 
