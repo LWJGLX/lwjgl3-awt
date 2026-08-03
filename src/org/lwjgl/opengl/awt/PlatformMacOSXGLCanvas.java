@@ -17,6 +17,7 @@ import java.awt.event.HierarchyEvent;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.DoubleBuffer;
+import java.nio.IntBuffer;
 
 import static org.lwjgl.opengl.CGL.*;
 import static org.lwjgl.opengl.GL11.glFlush;
@@ -29,51 +30,6 @@ import static org.lwjgl.system.macosx.ObjCRuntime.objc_getClass;
 import static org.lwjgl.system.macosx.ObjCRuntime.sel_getUid;
 
 public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
-    private static final int NSOpenGLPFAAllRenderers = 1;    /* choose from all available renderers          */
-    private static final int NSOpenGLPFATripleBuffer = 3;    /* choose a triple buffered pixel format        */
-    private static final int NSOpenGLPFADoubleBuffer = 5;    /* choose a double buffered pixel format        */
-    private static final int NSOpenGLPFAAuxBuffers = 7;    /* number of aux buffers                        */
-    private static final int NSOpenGLPFAColorSize = 8;    /* number of color buffer bits                  */
-    private static final int NSOpenGLPFAAlphaSize = 11;    /* number of alpha component bits               */
-    private static final int NSOpenGLPFADepthSize = 12;    /* number of depth buffer bits                  */
-    private static final int NSOpenGLPFAStencilSize = 13;    /* number of stencil buffer bits                */
-    private static final int NSOpenGLPFAAccumSize = 14;    /* number of accum buffer bits                  */
-    private static final int NSOpenGLPFAMinimumPolicy = 51;    /* never choose smaller buffers than requested  */
-    private static final int NSOpenGLPFAMaximumPolicy = 52;    /* choose largest buffers of type requested     */
-    private static final int NSOpenGLPFASampleBuffers = 55;    /* number of multi sample buffers               */
-    private static final int NSOpenGLPFASamples = 56;    /* number of samples per multi sample buffer    */
-    private static final int NSOpenGLPFAAuxDepthStencil = 57;    /* each aux buffer has its own depth stencil    */
-    private static final int NSOpenGLPFAColorFloat = 58;    /* color buffers store floating point pixels    */
-    private static final int NSOpenGLPFAMultisample = 59;    /* choose multisampling                         */
-    private static final int NSOpenGLPFASupersample = 60;    /* choose supersampling                         */
-    private static final int NSOpenGLPFASampleAlpha = 61;    /* request alpha filtering                      */
-    private static final int NSOpenGLPFARendererID = 70;    /* request renderer by ID                       */
-    private static final int NSOpenGLPFANoRecovery = 72;    /* disable all failure recovery systems         */
-    private static final int NSOpenGLPFAAccelerated = 73;    /* choose a hardware accelerated renderer       */
-    private static final int NSOpenGLPFAClosestPolicy = 74;    /* choose the closest color buffer to request   */
-    private static final int NSOpenGLPFABackingStore = 76;    /* back buffer contents are valid after swap    */
-    private static final int NSOpenGLPFAScreenMask = 84;    /* bit mask of supported physical screens       */
-    private static final int NSOpenGLPFAAllowOfflineRenderers = 96;  /* allow use of offline renderers               */
-    private static final int NSOpenGLPFAAcceleratedCompute = 97;    /* choose a hardware accelerated compute device */
-    private static final int NSOpenGLPFAOpenGLProfile = 99;    /* specify an OpenGL Profile to use             */
-    private static final int NSOpenGLPFAVirtualScreenCount = 128;    /* number of virtual screens in this format     */
-
-    private static final int NSOpenGLPFAStereo = 6;
-    private static final int NSOpenGLPFAOffScreen = 53;
-    private static final int NSOpenGLPFAFullScreen = 54;
-    private static final int NSOpenGLPFASingleRenderer = 71;
-    private static final int NSOpenGLPFARobust = 75;
-    private static final int NSOpenGLPFAMPSafe = 78;
-    private static final int NSOpenGLPFAWindow = 80;
-    private static final int NSOpenGLPFAMultiScreen = 81;
-    private static final int NSOpenGLPFACompliant = 83;
-    private static final int NSOpenGLPFAPixelBuffer = 90;
-    private static final int NSOpenGLPFARemotePixelBuffer = 91;
-
-    private static final int NSOpenGLProfileVersion3_2Core = 0x3200;
-    private static final int NSOpenGLProfileVersionLegacy = 0x1000;
-    private static final int NSOpenGLProfileVersion4_1Core = 0x4100;
-
     public static final JAWT awt;
     private static final long objc_msgSend;
     private static final long objc_autoreleasePoolPush;
@@ -104,9 +60,15 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private int layerY;
     private int layerWidth;
     private int layerHeight;
+    private long context;
+    private boolean doubleBuffered;
 
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
+        GLUtil.validateAttributes(attribs);
+        if (attribs.api != GLData.API.GL) {
+            throw new AWTException("macOS NSOpenGL does not support OpenGL ES contexts");
+        }
         this.canvas = canvas;
         if (!hierarchyListenerAdded) {
             canvas.addHierarchyListener(e -> {
@@ -138,90 +100,27 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     this.layerWidth = layerBounds[2];
                     this.layerHeight = layerBounds[3];
 
-                    //TODO: we don't really need 100
-                    ByteBuffer attribsArray = ByteBuffer.allocateDirect(4 * 100).order(ByteOrder.nativeOrder());
-                    attribsArray.putInt(NSOpenGLPFAAccelerated);
-                    attribsArray.putInt(NSOpenGLPFAClosestPolicy);
-                    if (attribs.stereo) {
-                        attribsArray.putInt(NSOpenGLPFAStereo);
-                    }
-                    if (attribs.doubleBuffer) {
-                        //doesn't work currently
-                        //attribsArray.putInt(NSOpenGLPFADoubleBuffer);
-                    }
-
-                    if (attribs.pixelFormatFloat) {
-                        attribsArray.putInt(NSOpenGLPFAColorFloat);
-                    }
-
-                    attribsArray.putInt(NSOpenGLPFAAccumSize);
-                    attribsArray.putInt(attribs.accumRedSize + attribs.accumGreenSize + attribs.accumBlueSize + attribs.accumAlphaSize);
-
-                    int colorBits = attribs.redSize +
-                            attribs.greenSize +
-                            attribs.blueSize;
-
-                    // macOS needs non-zero color size, so set reasonable values
-                    if (colorBits == 0)
-                        colorBits = 24;
-                    else if (colorBits < 15)
-                        colorBits = 15;
-
-                    attribsArray.putInt(NSOpenGLPFAColorSize);
-                    attribsArray.putInt(colorBits);
-
-                    attribsArray.putInt(NSOpenGLPFAAlphaSize);
-                    attribsArray.putInt(attribs.alphaSize);
-
-                    attribsArray.putInt(NSOpenGLPFADepthSize);
-                    attribsArray.putInt(attribs.depthSize);
-
-                    attribsArray.putInt(NSOpenGLPFAStencilSize);
-                    attribsArray.putInt(attribs.stencilSize);
-
-                    if (attribs.samples == 0) {
-                        attribsArray.putInt(NSOpenGLPFASampleBuffers);
-                        attribsArray.putInt(0);
-                    } else {
-                        attribsArray.putInt(NSOpenGLPFASampleBuffers);
-                        attribsArray.putInt(1);
-                        attribsArray.putInt(NSOpenGLPFASamples);
-                        attribsArray.putInt(attribs.samples);
-                    }
-
-                    if (attribs.profile == GLData.Profile.CORE) {
-                        attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
-                        attribsArray.putInt(NSOpenGLProfileVersion3_2Core);
-                    }
-                    if (attribs.profile == GLData.Profile.COMPATIBILITY) {
-                        attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
-                        attribsArray.putInt(NSOpenGLProfileVersionLegacy);
-                    } else {
-                        if (attribs.majorVersion >= 4) {
-                            attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
-                            attribsArray.putInt(NSOpenGLProfileVersion4_1Core);
-                        } else if (attribs.majorVersion >= 3) {
-                            attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
-                            attribsArray.putInt(NSOpenGLProfileVersion3_2Core);
-                        } else {
-                            attribsArray.putInt(NSOpenGLPFAOpenGLProfile);
-                            attribsArray.putInt(NSOpenGLProfileVersionLegacy);
+                    MacOSXGLDataUtil.PixelFormatSelection selection =
+                            MacOSXGLDataUtil.choosePixelFormat(attribs, PlatformMacOSXGLCanvas::createPixelFormat);
+                    long pixelFormat = selection.pixelFormat;
+                    try {
+                        view = createNSOpenGLView(pixelFormat,
+                                layerBounds[0], layerBounds[1], layerBounds[2], layerBounds[3]);
+                        // The surface layer belongs to the peer view rather than to the drawing surface info, but
+                        // retain it so it stays alive until the context is deleted.
+                        surfaceLayer = invokePPP(dsi.platformInfo(), sel_getUid("retain"), objc_msgSend);
+                        long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
+                        context = invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
+                        if (context == 0L) {
+                            throw new AWTException("NSOpenGLView returned no OpenGL context");
                         }
+                        configureSwapInterval(context, attribs.swapInterval);
+                        populateEffectiveData(context, effective);
+                        this.context = context;
+                        this.doubleBuffered = effective.doubleBuffer;
+                    } finally {
+                        invokePPV(pixelFormat, sel_getUid("release"), objc_msgSend);
                     }
-
-                    // 0 Terminated
-                    attribsArray.putInt(0).rewind();
-
-                    long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
-                    pixelFormat = invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"), MemoryUtil.memAddress(attribsArray), objc_msgSend);
-
-                    view = createNSOpenGLView(pixelFormat,
-                            layerBounds[0], layerBounds[1], layerBounds[2], layerBounds[3]);
-                    // The surface layer belongs to the peer view rather than to the drawing surface info, but
-                    // retain it so it stays alive until the context is deleted.
-                    surfaceLayer = invokePPP(dsi.platformInfo(), sel_getUid("retain"), objc_msgSend);
-                    long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
-                    context = invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
                 } finally {
                     JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
                 }
@@ -245,6 +144,97 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
      */
     private static void attachSurfaceLayer(long surfaceLayer, long layer) {
         performSelectorOnMainThread(surfaceLayer, sel_getUid("setLayer:"), layer);
+    }
+
+    private static long createPixelFormat(int[] attributes) {
+        IntBuffer attributeBuffer = BufferUtils.createIntBuffer(attributes.length);
+        attributeBuffer.put(attributes);
+        attributeBuffer.flip();
+        long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
+        return invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"),
+                MemoryUtil.memAddress(attributeBuffer), objc_msgSend);
+    }
+
+    private static void configureSwapInterval(long context, Integer swapInterval) throws AWTException {
+        if (swapInterval == null) {
+            return;
+        }
+        int error = CGLSetParameter(context, kCGLCPSwapInterval, swapInterval);
+        if (error != kCGLNoError) {
+            throw cglException("Failed to set the swap interval", error);
+        }
+    }
+
+    private static void populateEffectiveData(long context, GLData effective) throws AWTException {
+        long pixelFormat = CGLGetPixelFormat(context);
+        if (pixelFormat == 0L) {
+            throw new AWTException("CGL returned no pixel format for the new context");
+        }
+
+        effective.alphaSize = describePixelFormat(pixelFormat, kCGLPFAAlphaSize);
+        int colorSize = Math.max(0, describePixelFormat(pixelFormat, kCGLPFAColorSize) - effective.alphaSize);
+        effective.redSize = colorSize / 3 + (colorSize % 3 > 0 ? 1 : 0);
+        effective.greenSize = colorSize / 3 + (colorSize % 3 > 1 ? 1 : 0);
+        effective.blueSize = colorSize / 3;
+        effective.depthSize = describePixelFormat(pixelFormat, kCGLPFADepthSize);
+        effective.stencilSize = describePixelFormat(pixelFormat, kCGLPFAStencilSize);
+        effective.doubleBuffer = describePixelFormat(pixelFormat, kCGLPFADoubleBuffer) != 0;
+        effective.stereo = describePixelFormat(pixelFormat, kCGLPFAStereo) != 0;
+        effective.pixelFormatFloat = describePixelFormat(pixelFormat, kCGLPFAColorFloat) != 0;
+        effective.sampleBuffers = describePixelFormat(pixelFormat, kCGLPFASampleBuffers);
+        effective.samples = describePixelFormat(pixelFormat, kCGLPFASamples);
+
+        int accumSize = describePixelFormat(pixelFormat, kCGLPFAAccumSize);
+        effective.accumRedSize = accumSize / 4 + (accumSize % 4 > 0 ? 1 : 0);
+        effective.accumGreenSize = accumSize / 4 + (accumSize % 4 > 1 ? 1 : 0);
+        effective.accumBlueSize = accumSize / 4 + (accumSize % 4 > 2 ? 1 : 0);
+        effective.accumAlphaSize = accumSize / 4;
+
+        int profile = describePixelFormat(pixelFormat, kCGLPFAOpenGLProfile);
+        effective.api = GLData.API.GL;
+        if (profile == MacOSXGLDataUtil.NS_OPENGL_PROFILE_4_1_CORE) {
+            effective.majorVersion = 4;
+            effective.minorVersion = 1;
+            effective.profile = GLData.Profile.CORE;
+        } else if (profile == MacOSXGLDataUtil.NS_OPENGL_PROFILE_3_2_CORE) {
+            effective.majorVersion = 3;
+            effective.minorVersion = 2;
+            effective.profile = GLData.Profile.CORE;
+        } else {
+            effective.majorVersion = 2;
+            effective.minorVersion = 1;
+            effective.profile = null;
+        }
+        effective.forwardCompatible = effective.profile == GLData.Profile.CORE;
+        effective.debug = false;
+        effective.sRGB = false;
+        effective.contextReleaseBehavior = null;
+        effective.colorSamplesNV = 0;
+        effective.swapGroupNV = 0;
+        effective.swapBarrierNV = 0;
+        effective.robustness = false;
+        effective.loseContextOnReset = false;
+        effective.contextResetIsolation = false;
+
+        int[] swapInterval = new int[1];
+        int error = CGLGetParameter(context, kCGLCPSwapInterval, swapInterval);
+        if (error != kCGLNoError) {
+            throw cglException("Failed to query the effective swap interval", error);
+        }
+        effective.swapInterval = swapInterval[0];
+    }
+
+    private static int describePixelFormat(long pixelFormat, int attribute) throws AWTException {
+        int[] value = new int[1];
+        int error = CGLDescribePixelFormat(pixelFormat, 0, attribute, value);
+        if (error != kCGLNoError) {
+            throw cglException("Failed to query macOS pixel format attribute " + attribute, error);
+        }
+        return value[0];
+    }
+
+    private static AWTException cglException(String message, int error) {
+        return new AWTException(message + ": " + CGLErrorString(error) + " (" + error + ")");
     }
 
     private long createNSOpenGLView(long pixelFormat, int x, int y, int width, int height) {
@@ -422,8 +412,12 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     @Override
     public boolean swapBuffers() {
-        glFlush();
-        return true;
+        if (!doubleBuffered) {
+            glFlush();
+            return true;
+        }
+        long currentContext = CGLGetCurrentContext();
+        return currentContext == context && CGLFlushDrawable(context) == kCGLNoError;
     }
 
     @Override
@@ -433,6 +427,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         this.view = 0L;
         this.interLayer = 0L;
         this.surfaceLayer = 0L;
+        this.context = 0L;
+        this.doubleBuffered = false;
 
         // Keep teardown ordered behind any pending layer updates and run it on AppKit's main thread. Clearing an
         // NSOpenGLContext concurrently with Core Animation displaying its backing layer can abort inside setView:.
