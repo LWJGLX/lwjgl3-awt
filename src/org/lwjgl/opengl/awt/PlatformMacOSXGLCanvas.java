@@ -1,6 +1,5 @@
 package org.lwjgl.opengl.awt;
 
-import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
@@ -321,9 +320,11 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         invokePPPV(invocation, sel_getUid("setTarget:"), layer, objc_msgSend);
         invokePPPV(invocation, sel_getUid("setSelector:"), setHidden, objc_msgSend);
 
-        ByteBuffer hiddenValue = BufferUtils.createByteBuffer(1);
-        hiddenValue.put(0, hidden ? (byte) 1 : 0);
-        JNI.callPPPPV(invocation, sel_getUid("setArgument:atIndex:"), memAddress(hiddenValue), 2, objc_msgSend);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            ByteBuffer hiddenValue = stack.malloc(1);
+            hiddenValue.put(0, hidden ? (byte) 1 : 0);
+            JNI.callPPPPV(invocation, sel_getUid("setArgument:atIndex:"), memAddress(hiddenValue), 2, objc_msgSend);
+        }
 
         // Hierarchy notifications run on AWT's event thread, which AppKit may itself be waiting for. Queue the
         // mutation rather than introducing a synchronous AWT/AppKit cross-thread wait.
@@ -339,8 +340,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private static void setFrameOnMainThread(long target, int x, int y, int width, int height) {
         long autoreleasePool = invokeP(objc_autoreleasePoolPush);
         try {
-            // Core Animation frame changes must be committed by AppKit's run loop. NSInvocation also copies the
-            // CGRect argument, so the temporary direct buffer can be released as soon as the mutation has been queued.
+            // Core Animation frame changes must be committed by AppKit's run loop. NSInvocation copies the CGRect
+            // argument during setArgument:atIndex:, so stack storage remains valid for the complete native read.
             long setFrame = sel_getUid("setFrame:");
             long methodSignature = invokePPPP(target, sel_getUid("methodSignatureForSelector:"), setFrame, objc_msgSend);
             long invocation = invokePPPP(objc_getClass("NSInvocation"),
@@ -349,12 +350,10 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             invokePPPV(invocation, sel_getUid("setTarget:"), target, objc_msgSend);
             invokePPPV(invocation, sel_getUid("setSelector:"), setFrame, objc_msgSend);
 
-            ByteBuffer frame = BufferUtils.createByteBuffer(4 * Double.BYTES).order(ByteOrder.nativeOrder());
-            frame.putDouble(0, x);
-            frame.putDouble(Double.BYTES, y);
-            frame.putDouble(2 * Double.BYTES, width);
-            frame.putDouble(3 * Double.BYTES, height);
-            JNI.callPPPPV(invocation, sel_getUid("setArgument:atIndex:"), memAddress(frame), 2, objc_msgSend);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                DoubleBuffer frame = stack.doubles(x, y, width, height);
+                JNI.callPPPPV(invocation, sel_getUid("setArgument:atIndex:"), memAddress(frame), 2, objc_msgSend);
+            }
 
             invokePPP(invocation, sel_getUid("retain"), objc_msgSend);
             performSelectorOnMainThread(invocation, sel_getUid("invoke"), MemoryUtil.NULL);
@@ -458,6 +457,8 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             try {
                 int width = dsi.bounds().width();
                 int height = dsi.bounds().height();
+                int[] layerBounds = getLayerBounds(canvas, dsi.bounds().x(), dsi.bounds().y(), width, height);
+                updateLayerBounds(layerBounds);
                 FramebufferSizeUtil.getScaledSize(canvas, width, height, currentFramebufferSize);
                 int backingWidth = currentFramebufferSize[0];
                 int backingHeight = currentFramebufferSize[1];
@@ -473,8 +474,6 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                 }
                 this.framebufferWidth = Math.max(0, currentFramebufferSize[0]);
                 this.framebufferHeight = Math.max(0, currentFramebufferSize[1]);
-                int[] layerBounds = getLayerBounds(canvas, dsi.bounds().x(), dsi.bounds().y(), width, height);
-                updateLayerBounds(layerBounds);
             } finally {
                 JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
             }
@@ -504,15 +503,25 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         }
     }
 
-    private static int[] getLayerBounds(Canvas canvas, int x, int y, int width, int height) {
+    static int[] getLayerBounds(Canvas canvas, int x, int y, int width, int height) {
         // JAWT reports incorrect coordinates for canvases nested in containers such as JSplitPane.
-        // These component reads may occur off the EDT. A concurrent layout can yield one stale frame, but the bounds
-        // are sampled again on the next context activation and converge without blocking AppKit or AWT.
-        JRootPane rootPane = SwingUtilities.getRootPane(canvas);
-        if (rootPane != null) {
-            Point point = SwingUtilities.convertPoint(canvas, new Point(), rootPane);
-            x = point.x;
-            y = rootPane.getHeight() - point.y - height;
+        // Do not use SwingUtilities.convertPoint here: rendering holds the lifecycle lock, while screen-coordinate
+        // conversion may acquire AWT's tree lock in the opposite order to removeNotify. Reading the hierarchy directly
+        // is intentionally lock-free. A concurrent layout can yield one stale frame, but the next activation converges.
+        int rootX = 0;
+        int rootY = 0;
+        Component child = canvas;
+        Container parent = canvas.getParent();
+        while (parent != null) {
+            rootX += child.getX();
+            rootY += child.getY();
+            if (parent instanceof JRootPane) {
+                x = rootX;
+                y = parent.getHeight() - rootY - height;
+                break;
+            }
+            child = parent;
+            parent = parent.getParent();
         }
         return new int[]{x, y, width, height};
     }

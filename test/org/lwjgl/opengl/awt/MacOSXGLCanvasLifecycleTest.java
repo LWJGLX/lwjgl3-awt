@@ -18,7 +18,9 @@ import javax.swing.JPanel;
 import javax.swing.JRootPane;
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
+import java.awt.Canvas;
 import java.awt.Dimension;
+import java.awt.IllegalComponentStateException;
 import java.awt.Point;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
@@ -47,6 +49,29 @@ import static org.lwjgl.opengl.CGL.kCGLNoError;
 
 @EnabledOnOs(OS.MAC)
 class MacOSXGLCanvasLifecycleTest {
+
+    @Test
+    void computesNestedLayerBoundsWithoutScreenCoordinateLookup() {
+        JRootPane rootPane = new JRootPane();
+        rootPane.setSize(500, 400);
+        JPanel outer = new JPanel(null);
+        outer.setBounds(17, 29, 400, 300);
+        JPanel inner = new JPanel(null);
+        inner.setBounds(31, 43, 300, 200);
+        CanvasWithoutScreenCoordinates canvas = new CanvasWithoutScreenCoordinates();
+        canvas.setBounds(47, 53, 160, 120);
+        inner.add(canvas);
+        outer.add(inner);
+        rootPane.getContentPane().setLayout(null);
+        rootPane.getContentPane().add(outer);
+
+        int[] bounds = PlatformMacOSXGLCanvas.getLayerBounds(canvas, 0, 0, 160, 120);
+
+        assertEquals(95, bounds[0]);
+        assertEquals(155, bounds[1]);
+        assertEquals(160, bounds[2]);
+        assertEquals(120, bounds[3]);
+    }
 
     @Test
     void configuresInitialSurfaceBackingSizeBeforeInitGL() throws Exception {
@@ -416,6 +441,13 @@ class MacOSXGLCanvasLifecycleTest {
         @Override
         public void paintGL() {
             swapBuffers();
+        }
+    }
+
+    private static final class CanvasWithoutScreenCoordinates extends Canvas {
+        @Override
+        public Point getLocationOnScreen() {
+            throw new IllegalComponentStateException("Screen-coordinate lookup must not be used");
         }
     }
 }
