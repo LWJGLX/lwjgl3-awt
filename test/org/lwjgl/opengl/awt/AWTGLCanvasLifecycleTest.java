@@ -225,6 +225,19 @@ class AWTGLCanvasLifecycleTest {
     }
 
     @Test
+    void renderUnlocksDrawingSurfaceWhenFramebufferSizeQueryThrows() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.framebufferSizeFailure = new IllegalStateException("size query failed");
+        TestCanvas canvas = new TestCanvas(platform);
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::render);
+
+        assertEquals("size query failed", failure.getMessage());
+        assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "makeCurrent:0", "unlock"),
+                platform.calls);
+    }
+
+    @Test
     void disposeCanvasWaitsForInFlightRender() throws Exception {
         RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
         CountDownLatch paintStarted = new CountDownLatch(1);
@@ -422,6 +435,7 @@ class AWTGLCanvasLifecycleTest {
         final List<String> calls = Collections.synchronizedList(new ArrayList<>());
         final CountDownLatch deleteCalled = new CountDownLatch(1);
         RuntimeException deleteFailure;
+        RuntimeException framebufferSizeFailure;
         long makeCurrentFailureContext = Long.MIN_VALUE;
         long makeCurrentExceptionContext = Long.MIN_VALUE;
         boolean reportsFramebufferSize = true;
@@ -471,6 +485,9 @@ class AWTGLCanvasLifecycleTest {
 
         @Override
         public boolean getFramebufferSize(int[] size) {
+            if (framebufferSizeFailure != null) {
+                throw framebufferSizeFailure;
+            }
             if (!reportsFramebufferSize) {
                 return false;
             }

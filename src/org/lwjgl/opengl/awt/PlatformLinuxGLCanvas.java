@@ -13,7 +13,6 @@ import static org.lwjgl.opengl.GLXEXTCreateContextESProfile.*;
 import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.Arrays;
 import java.util.List;
@@ -41,6 +40,7 @@ import org.lwjgl.system.libffi.FFICIF;
 import org.lwjgl.system.linux.X11;
 
 import static org.lwjgl.system.libffi.LibFFI.*;
+import static org.lwjgl.system.Pointer.POINTER_SIZE;
 
 public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	private static final long X_GET_GEOMETRY = X11.getLibrary().getFunctionAddress("XGetGeometry");
@@ -240,9 +240,10 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			}
 			arguments.flip();
 
-			ByteBuffer result = stack.malloc(Integer.BYTES).order(ByteOrder.nativeOrder());
+			// libffi widens integral return values to ffi_arg, which is pointer-sized.
+			ByteBuffer result = stack.malloc(POINTER_SIZE);
 			ffi_call(cif, X_GET_GEOMETRY, result, arguments);
-			if (result.getInt(0) == 0) {
+			if (PointerBuffer.get(result, 0) == 0L) {
 				return false;
 			}
 			size[0] = geometry.get(2);
