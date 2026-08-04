@@ -5,7 +5,10 @@ import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.opengl.ARBRobustness;
 import org.lwjgl.opengl.GL;
+import org.lwjgl.system.APIUtil;
+import org.lwjgl.system.APIUtil.APIVersion;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -19,10 +22,13 @@ import javax.swing.JPanel;
 import javax.swing.JRootPane;
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
+import java.awt.AWTException;
 import java.awt.Canvas;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.IllegalComponentStateException;
 import java.awt.Point;
+import java.awt.Robot;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 
@@ -30,6 +36,7 @@ import static java.nio.ByteOrder.nativeOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.lwjgl.system.MemoryUtil.memAddress;
@@ -54,12 +61,20 @@ import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11.GL_FRONT;
 import static org.lwjgl.opengl.GL11.GL_RGBA;
 import static org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE;
+import static org.lwjgl.opengl.GL11.GL_VERSION;
 import static org.lwjgl.opengl.GL11.glClear;
 import static org.lwjgl.opengl.GL11.glClearColor;
 import static org.lwjgl.opengl.GL11.glDrawBuffer;
 import static org.lwjgl.opengl.GL11.glFinish;
+import static org.lwjgl.opengl.GL11.glGetInteger;
+import static org.lwjgl.opengl.GL11.glGetString;
 import static org.lwjgl.opengl.GL11.glReadBuffer;
 import static org.lwjgl.opengl.GL11.glReadPixels;
+import static org.lwjgl.opengl.GL30.GL_CONTEXT_FLAGS;
+import static org.lwjgl.opengl.GL30.GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT;
+import static org.lwjgl.opengl.GL32.GL_CONTEXT_CORE_PROFILE_BIT;
+import static org.lwjgl.opengl.GL32.GL_CONTEXT_PROFILE_MASK;
+import static org.lwjgl.opengl.GL43.GL_CONTEXT_FLAG_DEBUG_BIT;
 
 @EnabledOnOs(OS.MAC)
 class MacOSXGLCanvasLifecycleTest {
@@ -85,6 +100,17 @@ class MacOSXGLCanvasLifecycleTest {
         assertEquals(155, bounds[1]);
         assertEquals(160, bounds[2]);
         assertEquals(120, bounds[3]);
+    }
+
+    @Test
+    void rejectsContextSharingInsteadOfSilentlyIgnoringIt() {
+        GLData data = new GLData();
+        data.shareContext = new TestCanvas();
+
+        AWTException failure = assertThrows(AWTException.class,
+                () -> MacOSXGLDataUtil.validateAttributes(data));
+
+        assertTrue(failure.getMessage().contains("sharing"));
     }
 
     @Test
@@ -163,7 +189,16 @@ class MacOSXGLCanvasLifecycleTest {
             assertEquals(Integer.valueOf(0), canvas.effective.swapInterval);
             assertEquals(GLData.API.GL, canvas.effective.api);
             assertEquals(GLData.Profile.CORE, canvas.effective.profile);
-            assertTrue(canvas.effective.majorVersion >= 3);
+            assertEquals(canvas.actualMajorVersion, canvas.effective.majorVersion);
+            assertEquals(canvas.actualMinorVersion, canvas.effective.minorVersion);
+            assertEquals((canvas.actualProfileMask & GL_CONTEXT_CORE_PROFILE_BIT) != 0,
+                    canvas.effective.profile == GLData.Profile.CORE);
+            assertEquals((canvas.actualContextFlags & GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0,
+                    canvas.effective.forwardCompatible);
+            assertEquals((canvas.actualContextFlags & GL_CONTEXT_FLAG_DEBUG_BIT) != 0,
+                    canvas.effective.debug);
+            assertEquals((canvas.actualContextFlags & ARBRobustness.GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB) != 0,
+                    canvas.effective.robustness);
             assertEquals(8, canvas.effective.redSize);
             assertEquals(8, canvas.effective.greenSize);
             assertEquals(8, canvas.effective.blueSize);
@@ -200,6 +235,21 @@ class MacOSXGLCanvasLifecycleTest {
             assertPresentedFrameEventually(state);
             TestCanvas canvas = state.canvases[0];
             assertTrue(canvas.effective.doubleBuffer);
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
+
+    @Test
+    void presentsDoubleBufferedFrameThroughWindowCompositor() throws Exception {
+        GLData data = new GLData();
+        data.doubleBuffer = true;
+        data.swapInterval = 0;
+
+        FrameState state = showPresentingCanvas(data);
+        try {
+            assertPresentedFrameEventually(state);
+            assertCompositedFrameEventually(state);
         } finally {
             SwingUtilities.invokeAndWait(state.frame::dispose);
         }
@@ -398,6 +448,41 @@ class MacOSXGLCanvasLifecycleTest {
         return Math.abs(expected - actual) <= 1;
     }
 
+    private static void assertCompositedFrameEventually(FrameState state) throws Exception {
+        TestCanvas canvas = state.canvases[0];
+        Point[] samplePoint = new Point[1];
+        SwingUtilities.invokeAndWait(() -> {
+            state.frame.toFront();
+            Point location = canvas.getLocationOnScreen();
+            samplePoint[0] = new Point(
+                    location.x + canvas.getWidth() / 2,
+                    location.y + canvas.getHeight() / 2);
+        });
+
+        Robot robot = new Robot();
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        Color actual;
+        do {
+            renderCanvases(state);
+            robot.waitForIdle();
+            robot.delay(20);
+            actual = robot.getPixelColor(samplePoint[0].x, samplePoint[0].y);
+            if (screenColorComponentMatches(64, actual.getRed())
+                    && screenColorComponentMatches(128, actual.getGreen())
+                    && screenColorComponentMatches(191, actual.getBlue())) {
+                return;
+            }
+        } while (System.nanoTime() < deadline);
+        fail("Expected the compositor to present RGB near [64, 128, 191] but sampled "
+                + actual.getRed() + ", " + actual.getGreen() + ", " + actual.getBlue());
+    }
+
+    private static boolean screenColorComponentMatches(int expected, int actual) {
+        // Robot reads display-managed pixels. Display P3 conversion can shift an individual channel noticeably,
+        // while the front-buffer test above remains the exact, color-space-independent swap assertion.
+        return Math.abs(expected - actual) <= 40;
+    }
+
     private static double[] expectedLayerFrame(TestCanvas canvas) throws Exception {
         double[][] result = new double[1][];
         SwingUtilities.invokeAndWait(() -> {
@@ -558,6 +643,10 @@ class MacOSXGLCanvasLifecycleTest {
         int surfaceBackingWidth;
         int surfaceBackingHeight;
         int configuredSwapInterval;
+        int actualMajorVersion;
+        int actualMinorVersion;
+        int actualProfileMask;
+        int actualContextFlags;
         final boolean verifyPresentation;
         final int[] frontPixel = new int[4];
 
@@ -578,6 +667,15 @@ class MacOSXGLCanvasLifecycleTest {
         @Override
         public void initGL() {
             GL.createCapabilities();
+            APIVersion actualVersion = APIUtil.apiParseVersion(glGetString(GL_VERSION));
+            actualMajorVersion = actualVersion.major;
+            actualMinorVersion = actualVersion.minor;
+            if (GLUtil.atLeast32(actualMajorVersion, actualMinorVersion)) {
+                actualProfileMask = glGetInteger(GL_CONTEXT_PROFILE_MASK);
+            }
+            if (GLUtil.atLeast30(actualMajorVersion, actualMinorVersion)) {
+                actualContextFlags = glGetInteger(GL_CONTEXT_FLAGS);
+            }
             int[] enabled = new int[1];
             assertEquals(kCGLNoError, CGLIsEnabled(context, kCGLCESurfaceBackingSize, enabled));
             surfaceBackingSizeEnabled = enabled[0] != 0;
