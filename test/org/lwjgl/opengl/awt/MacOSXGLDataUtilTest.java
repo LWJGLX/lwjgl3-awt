@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.awt.AWTException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -107,6 +108,49 @@ class MacOSXGLDataUtilTest {
                 () -> MacOSXGLDataUtil.choosePixelFormat(new GLData(), attributes -> 0L));
 
         assertTrue(exception.getMessage().contains("2 attempts"));
+    }
+
+    @Test
+    void mapsOpenGL33RequestToTheNextSupportedCoreProfile() {
+        GLData data = new GLData();
+        data.majorVersion = 3;
+        data.minorVersion = 3;
+        data.profile = GLData.Profile.CORE;
+
+        assertEquals(NS_OPENGL_PROFILE_4_1_CORE, MacOSXGLDataUtil.profileAttribute(data));
+    }
+
+    @Test
+    void rejectsOptionsThatNSOpenGLCannotHonor() {
+        assertUnsupported(data -> data.api = GLData.API.GLES, "OpenGL ES");
+        assertUnsupported(data -> data.debug = true, "debug");
+        assertUnsupported(data -> data.sRGB = true, "sRGB");
+        assertUnsupported(data -> data.contextReleaseBehavior = GLData.ReleaseBehavior.NONE, "release behavior");
+        assertUnsupported(data -> {
+            data.samples = 4;
+            data.colorSamplesNV = 2;
+        }, "coverage sampling");
+        assertUnsupported(data -> data.swapGroupNV = 1, "swap groups");
+        assertUnsupported(data -> data.robustness = true, "robustness");
+        assertUnsupported(data -> {
+            data.majorVersion = 3;
+            data.minorVersion = 2;
+            data.profile = GLData.Profile.COMPATIBILITY;
+        }, "compatibility profiles");
+        assertUnsupported(data -> {
+            data.majorVersion = 4;
+            data.minorVersion = 2;
+        }, "up to 4.1");
+    }
+
+    private static void assertUnsupported(Consumer<GLData> configuration, String messageFragment) {
+        GLData data = new GLData();
+        configuration.accept(data);
+
+        AWTException failure = assertThrows(AWTException.class,
+                () -> MacOSXGLDataUtil.validateAttributes(data));
+
+        assertTrue(failure.getMessage().contains(messageFragment));
     }
 
     private static boolean contains(int[] values, int expected) {

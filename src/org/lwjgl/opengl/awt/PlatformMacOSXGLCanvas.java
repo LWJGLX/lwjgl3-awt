@@ -1,6 +1,15 @@
 package org.lwjgl.opengl.awt;
 
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.opengl.ARBRobustness;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GL32;
+import org.lwjgl.opengl.GL43;
+import org.lwjgl.system.APIUtil;
+import org.lwjgl.system.APIUtil.APIVersion;
+import org.lwjgl.system.Checks;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -15,7 +24,6 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.HierarchyEvent;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.DoubleBuffer;
 import java.nio.IntBuffer;
 
@@ -65,75 +73,95 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     @Override
     public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
-        GLUtil.validateAttributes(attribs);
-        if (attribs.api != GLData.API.GL) {
-            throw new AWTException("macOS NSOpenGL does not support OpenGL ES contexts");
-        }
+        MacOSXGLDataUtil.validateAttributes(attribs);
         this.canvas = canvas;
-        if (!hierarchyListenerAdded) {
-            canvas.addHierarchyListener(e -> {
-                // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
-                if (view != 0L && (e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
-                    long layer = invokePPP(view, sel_getUid("layer"), objc_msgSend);
-                    setLayerHiddenOnMainThread(layer, !e.getChanged().isShowing());
-                }
-            });
-            hierarchyListenerAdded = true;
-        }
-        long context;
-        JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         try {
-            int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
-            if ((lock & JAWT_LOCK_ERROR) != 0)
-                throw new AWTException("JAWT_DrawingSurface_Lock() failed");
+            if (!hierarchyListenerAdded) {
+                canvas.addHierarchyListener(e -> {
+                    // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
+                    if (view != 0L && (e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
+                        long layer = invokePPP(view, sel_getUid("layer"), objc_msgSend);
+                        setLayerHiddenOnMainThread(layer, !e.getChanged().isShowing());
+                    }
+                });
+                hierarchyListenerAdded = true;
+            }
+            long context;
+            JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+            if (ds == null) {
+                throw new AWTException("Failed to get JAWT drawing surface");
+            }
             try {
-                JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+                int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
+                if ((lock & JAWT_LOCK_ERROR) != 0) {
+                    throw new AWTException("JAWT_DrawingSurface_Lock() failed");
+                }
                 try {
-                    int width = dsi.bounds().width();
-                    int height = dsi.bounds().height();
-                    int[] layerBounds = getLayerBounds(canvas, dsi.bounds().x(), dsi.bounds().y(), width, height);
-                    FramebufferSizeUtil.getScaledSize(canvas, width, height, currentFramebufferSize);
-                    this.framebufferWidth = currentFramebufferSize[0];
-                    this.framebufferHeight = currentFramebufferSize[1];
-                    this.layerX = layerBounds[0];
-                    this.layerY = layerBounds[1];
-                    this.layerWidth = layerBounds[2];
-                    this.layerHeight = layerBounds[3];
-
-                    MacOSXGLDataUtil.PixelFormatSelection selection =
-                            MacOSXGLDataUtil.choosePixelFormat(attribs, PlatformMacOSXGLCanvas::createPixelFormat);
-                    long pixelFormat = selection.pixelFormat;
+                    JAWTDrawingSurfaceInfo dsi =
+                            JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+                    if (dsi == null) {
+                        throw new AWTException("Failed to get JAWT drawing surface information");
+                    }
                     try {
-                        view = createNSOpenGLView(pixelFormat,
-                                layerBounds[0], layerBounds[1], layerBounds[2], layerBounds[3]);
-                        // The surface layer belongs to the peer view rather than to the drawing surface info, but
-                        // retain it so it stays alive until the context is deleted.
-                        surfaceLayer = invokePPP(dsi.platformInfo(), sel_getUid("retain"), objc_msgSend);
-                        long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
-                        context = invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
-                        if (context == 0L) {
-                            throw new AWTException("NSOpenGLView returned no OpenGL context");
+                        int width = dsi.bounds().width();
+                        int height = dsi.bounds().height();
+                        int[] layerBounds = getLayerBounds(canvas, dsi.bounds().x(), dsi.bounds().y(), width, height);
+                        FramebufferSizeUtil.getScaledSize(canvas, width, height, currentFramebufferSize);
+                        this.framebufferWidth = currentFramebufferSize[0];
+                        this.framebufferHeight = currentFramebufferSize[1];
+                        this.layerX = layerBounds[0];
+                        this.layerY = layerBounds[1];
+                        this.layerWidth = layerBounds[2];
+                        this.layerHeight = layerBounds[3];
+
+                        MacOSXGLDataUtil.PixelFormatSelection selection =
+                                MacOSXGLDataUtil.choosePixelFormat(attribs, PlatformMacOSXGLCanvas::createPixelFormat);
+                        long pixelFormat = selection.pixelFormat;
+                        try {
+                            view = createNSOpenGLView(pixelFormat,
+                                    layerBounds[0], layerBounds[1], layerBounds[2], layerBounds[3]);
+                            // The surface layer belongs to the peer view rather than to the drawing surface info, but
+                            // retain it so it stays alive until the context is deleted.
+                            surfaceLayer = invokePPP(dsi.platformInfo(), sel_getUid("retain"), objc_msgSend);
+                            if (surfaceLayer == 0L) {
+                                throw new AWTException("JAWT returned no macOS surface layer");
+                            }
+                            long openGLContext = invokePPP(view, sel_getUid("openGLContext"), objc_msgSend);
+                            if (openGLContext == 0L) {
+                                throw new AWTException("NSOpenGLView returned no NSOpenGLContext");
+                            }
+                            context = invokePPP(openGLContext, sel_getUid("CGLContextObj"), objc_msgSend);
+                            if (context == 0L) {
+                                throw new AWTException("NSOpenGLView returned no OpenGL context");
+                            }
+                            this.context = context;
+                            configureSwapInterval(context, attribs.swapInterval);
+                            populateEffectiveData(context, effective);
+                            this.doubleBuffered = effective.doubleBuffer;
+                        } finally {
+                            invokePPV(pixelFormat, sel_getUid("release"), objc_msgSend);
                         }
-                        configureSwapInterval(context, attribs.swapInterval);
-                        populateEffectiveData(context, effective);
-                        this.context = context;
-                        this.doubleBuffered = effective.doubleBuffer;
                     } finally {
-                        invokePPV(pixelFormat, sel_getUid("release"), objc_msgSend);
+                        JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
                     }
                 } finally {
-                    JAWT_DrawingSurface_FreeDrawingSurfaceInfo(dsi, ds.FreeDrawingSurfaceInfo());
+                    JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
                 }
             } finally {
-                JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
+                JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
             }
-        } finally {
-            JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
-        }
 
-        attachSurfaceLayer(surfaceLayer, interLayer);
-        performSelectorOnMainThread(interLayer, sel_getUid("release"), MemoryUtil.NULL);
-        return context;
+            attachSurfaceLayer(surfaceLayer, interLayer);
+            performSelectorOnMainThread(interLayer, sel_getUid("release"), MemoryUtil.NULL);
+            return context;
+        } catch (AWTException | RuntimeException | Error failure) {
+            try {
+                releaseFailedCreation();
+            } catch (RuntimeException | Error cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
     }
 
     /**
@@ -147,12 +175,12 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     }
 
     private static long createPixelFormat(int[] attributes) {
-        IntBuffer attributeBuffer = BufferUtils.createIntBuffer(attributes.length);
-        attributeBuffer.put(attributes);
-        attributeBuffer.flip();
-        long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
-        return invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"),
-                MemoryUtil.memAddress(attributeBuffer), objc_msgSend);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer attributeBuffer = stack.ints(attributes);
+            long pixelFormat = invokePPP(NSOpenGLPixelFormat, sel_getUid("alloc"), objc_msgSend);
+            return invokePPPP(pixelFormat, sel_getUid("initWithAttributes:"),
+                    MemoryUtil.memAddress(attributeBuffer), objc_msgSend);
+        }
     }
 
     private static void configureSwapInterval(long context, Integer swapInterval) throws AWTException {
@@ -190,23 +218,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         effective.accumBlueSize = accumSize / 4 + (accumSize % 4 > 2 ? 1 : 0);
         effective.accumAlphaSize = accumSize / 4;
 
-        int profile = describePixelFormat(pixelFormat, kCGLPFAOpenGLProfile);
         effective.api = GLData.API.GL;
-        if (profile == MacOSXGLDataUtil.NS_OPENGL_PROFILE_4_1_CORE) {
-            effective.majorVersion = 4;
-            effective.minorVersion = 1;
-            effective.profile = GLData.Profile.CORE;
-        } else if (profile == MacOSXGLDataUtil.NS_OPENGL_PROFILE_3_2_CORE) {
-            effective.majorVersion = 3;
-            effective.minorVersion = 2;
-            effective.profile = GLData.Profile.CORE;
-        } else {
-            effective.majorVersion = 2;
-            effective.minorVersion = 1;
-            effective.profile = null;
-        }
-        effective.forwardCompatible = effective.profile == GLData.Profile.CORE;
-        effective.debug = false;
         effective.sRGB = false;
         effective.contextReleaseBehavior = null;
         effective.colorSamplesNV = 0;
@@ -222,6 +234,83 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             throw cglException("Failed to query the effective swap interval", error);
         }
         effective.swapInterval = swapInterval[0];
+        populateEffectiveContextData(context, effective);
+    }
+
+    private static void populateEffectiveContextData(long context, GLData effective) throws AWTException {
+        long previousContext = CGLGetCurrentContext();
+        int error = CGLSetCurrentContext(context);
+        if (error != kCGLNoError) {
+            throw cglException("Failed to make the new context current while querying it", error);
+        }
+        try {
+            queryEffectiveContextData(effective);
+        } catch (AWTException | RuntimeException | Error failure) {
+            int restoreError = CGLSetCurrentContext(previousContext);
+            if (restoreError != kCGLNoError) {
+                failure.addSuppressed(cglException("Failed to restore the previous OpenGL context", restoreError));
+            }
+            throw failure;
+        }
+        error = CGLSetCurrentContext(previousContext);
+        if (error != kCGLNoError) {
+            throw cglException("Failed to restore the previous OpenGL context", error);
+        }
+    }
+
+    private static void queryEffectiveContextData(GLData effective) throws AWTException {
+        long glGetString = GL.getFunctionProvider().getFunctionAddress("glGetString");
+        long glGetIntegerv = GL.getFunctionProvider().getFunctionAddress("glGetIntegerv");
+        if (glGetString == 0L || glGetIntegerv == 0L) {
+            throw new AWTException("Failed to resolve OpenGL context-query functions");
+        }
+
+        APIVersion version = APIUtil.apiParseVersion(getString(GL11.GL_VERSION, glGetString));
+        effective.majorVersion = version.major;
+        effective.minorVersion = version.minor;
+        effective.profile = null;
+        effective.debug = false;
+        effective.forwardCompatible = false;
+        effective.robustness = false;
+        effective.loseContextOnReset = false;
+        effective.contextResetIsolation = false;
+
+        if (GLUtil.atLeast32(version.major, version.minor)) {
+            int profileMask = getInteger(GL32.GL_CONTEXT_PROFILE_MASK, glGetIntegerv);
+            if ((profileMask & GL32.GL_CONTEXT_CORE_PROFILE_BIT) != 0) {
+                effective.profile = GLData.Profile.CORE;
+            } else if ((profileMask & GL32.GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0) {
+                effective.profile = GLData.Profile.COMPATIBILITY;
+            } else if (profileMask != 0) {
+                throw new AWTException("Unknown OpenGL context profile mask: " + profileMask);
+            }
+        }
+        if (GLUtil.atLeast30(version.major, version.minor)) {
+            int contextFlags = getInteger(GL30.GL_CONTEXT_FLAGS, glGetIntegerv);
+            effective.debug = (contextFlags & GL43.GL_CONTEXT_FLAG_DEBUG_BIT) != 0;
+            effective.forwardCompatible =
+                    (contextFlags & GL30.GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0;
+            effective.robustness =
+                    (contextFlags & ARBRobustness.GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB) != 0;
+            if (effective.robustness) {
+                int resetStrategy =
+                        getInteger(ARBRobustness.GL_RESET_NOTIFICATION_STRATEGY_ARB, glGetIntegerv);
+                effective.loseContextOnReset =
+                        resetStrategy == ARBRobustness.GL_LOSE_CONTEXT_ON_RESET_ARB;
+            }
+        }
+    }
+
+    private static int getInteger(int pname, long function) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer value = stack.callocInt(1);
+            JNI.callPV(pname, memAddress(value), function);
+            return value.get(0);
+        }
+    }
+
+    private static String getString(int pname, long function) {
+        return MemoryUtil.memUTF8(Checks.check(JNI.callP(pname, function)));
     }
 
     private static int describePixelFormat(long pixelFormat, int attribute) throws AWTException {
@@ -249,6 +338,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         // init NSOpenGLView with frame and device
         // NSOpenGLView *view = [nsOpenGLView initWithFrame:pixelFormat:];
         long view = NSOpenGLView_initWithFrame(nsOpenGLView, 0, 0, width, height, pixelFormat);
+        this.view = view;
 
         // make NSOpenGLView layer-backed
         // [view setWantsLayer:YES];
@@ -262,6 +352,9 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         long openglViewLayer = JNI.invokePPJ(view,
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
+        if (openglViewLayer == 0L) {
+            throw new IllegalStateException("NSOpenGLView returned no Core Animation layer");
+        }
 
         // The layer must not autoresize with the intermediate layer. Core Animation's autoresizing applies the
         // superlayer's bounds *delta* to its sublayers, and the intermediate layer's frame is applied
@@ -277,11 +370,15 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
         // create intermediate layer and set its frame
         // CALayer *interLayer = [CALayer layer];
-		interLayer = JNI.invokePPP(
+        long intermediateLayer = JNI.invokePPP(
                 ObjCRuntime.objc_getClass("CALayer"),
                 ObjCRuntime.sel_getUid("layer"),
                 objc_msgSend);
-        invokePPP(interLayer, sel_getUid("retain"), objc_msgSend);
+        if (intermediateLayer == 0L) {
+            throw new IllegalStateException("Unable to create the intermediate Core Animation layer");
+        }
+        invokePPP(intermediateLayer, sel_getUid("retain"), objc_msgSend);
+        interLayer = intermediateLayer;
 
         // [interLayer setFrame:CGRectMake(x, y, width, height)];
         setFrameOnMainThread(interLayer, x, y, width, height);
@@ -408,6 +505,76 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         elements.put(MemoryUtil.NULL);
         elements.flip();
         return FFIType.calloc(stack).type(FFI_TYPE_STRUCT).elements(elements);
+    }
+
+    private void releaseFailedCreation() {
+        long failedContext = this.context;
+        long failedView = this.view;
+        long failedInterLayer = this.interLayer;
+        long failedSurfaceLayer = this.surfaceLayer;
+        this.context = 0L;
+        this.view = 0L;
+        this.interLayer = 0L;
+        this.surfaceLayer = 0L;
+        this.doubleBuffered = false;
+        this.canvas = null;
+
+        Throwable cleanupFailure = null;
+        if (failedContext != 0L && CGLGetCurrentContext() == failedContext) {
+            int clearContextError = CGLSetCurrentContext(0L);
+            if (clearContextError != kCGLNoError) {
+                cleanupFailure = new IllegalStateException("Failed to clear the partially created OpenGL context: "
+                        + CGLErrorString(clearContextError) + " (" + clearContextError + ")");
+            }
+        }
+
+        // These selectors share AppKit's FIFO queue with layer creation, so teardown remains ordered even when
+        // creation fails after some native objects have already been initialized.
+        if (failedSurfaceLayer != 0L) {
+            cleanupFailure = runCleanup(cleanupFailure,
+                    () -> performSelectorOnMainThread(
+                            failedSurfaceLayer, sel_getUid("setLayer:"), MemoryUtil.NULL));
+        }
+        if (failedView != 0L) {
+            cleanupFailure = runCleanup(cleanupFailure,
+                    () -> performSelectorOnMainThread(failedView,
+                            sel_getUid("removeFromSuperviewWithoutNeedingDisplay"), MemoryUtil.NULL));
+            cleanupFailure = runCleanup(cleanupFailure,
+                    () -> performSelectorOnMainThread(
+                            failedView, sel_getUid("clearGLContext"), MemoryUtil.NULL));
+            cleanupFailure = runCleanup(cleanupFailure,
+                    () -> performSelectorOnMainThread(failedView, sel_getUid("release"), MemoryUtil.NULL));
+        }
+        if (failedSurfaceLayer != 0L) {
+            cleanupFailure = runCleanup(cleanupFailure,
+                    () -> performSelectorOnMainThread(
+                            failedSurfaceLayer, sel_getUid("release"), MemoryUtil.NULL));
+        }
+        if (failedInterLayer != 0L) {
+            cleanupFailure = runCleanup(cleanupFailure,
+                    () -> performSelectorOnMainThread(
+                            failedInterLayer, sel_getUid("release"), MemoryUtil.NULL));
+        }
+        if (cleanupFailure instanceof Error) {
+            throw (Error) cleanupFailure;
+        }
+        if (cleanupFailure != null) {
+            throw (RuntimeException) cleanupFailure;
+        }
+    }
+
+    private static Throwable runCleanup(Throwable previousFailure, Runnable cleanup) {
+        try {
+            cleanup.run();
+        } catch (RuntimeException | Error failure) {
+            if (previousFailure == null) {
+                return failure;
+            }
+            if (previousFailure != failure) {
+                previousFailure.addSuppressed(failure);
+            }
+        }
+        return previousFailure;
     }
 
     @Override
