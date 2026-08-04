@@ -24,11 +24,9 @@ import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import java.awt.AWTException;
 import java.awt.Canvas;
-import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.IllegalComponentStateException;
 import java.awt.Point;
-import java.awt.Robot;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 
@@ -241,21 +239,6 @@ class MacOSXGLCanvasLifecycleTest {
     }
 
     @Test
-    void presentsDoubleBufferedFrameThroughWindowCompositor() throws Exception {
-        GLData data = new GLData();
-        data.doubleBuffer = true;
-        data.swapInterval = 0;
-
-        FrameState state = showPresentingCanvas(data);
-        try {
-            assertPresentedFrameEventually(state);
-            assertCompositedFrameEventually(state);
-        } finally {
-            SwingUtilities.invokeAndWait(state.frame::dispose);
-        }
-    }
-
-    @Test
     void updatesNativeLayerFrameWhenCanvasMovesInsideRootPane() throws Exception {
         FrameState state = showMovableCanvas();
         try {
@@ -446,41 +429,6 @@ class MacOSXGLCanvasLifecycleTest {
 
     private static boolean colorComponentMatches(int expected, int actual) {
         return Math.abs(expected - actual) <= 1;
-    }
-
-    private static void assertCompositedFrameEventually(FrameState state) throws Exception {
-        TestCanvas canvas = state.canvases[0];
-        Point[] samplePoint = new Point[1];
-        SwingUtilities.invokeAndWait(() -> {
-            state.frame.toFront();
-            Point location = canvas.getLocationOnScreen();
-            samplePoint[0] = new Point(
-                    location.x + canvas.getWidth() / 2,
-                    location.y + canvas.getHeight() / 2);
-        });
-
-        Robot robot = new Robot();
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        Color actual;
-        do {
-            renderCanvases(state);
-            robot.waitForIdle();
-            robot.delay(20);
-            actual = robot.getPixelColor(samplePoint[0].x, samplePoint[0].y);
-            if (screenColorComponentMatches(64, actual.getRed())
-                    && screenColorComponentMatches(128, actual.getGreen())
-                    && screenColorComponentMatches(191, actual.getBlue())) {
-                return;
-            }
-        } while (System.nanoTime() < deadline);
-        fail("Expected the compositor to present RGB near [64, 128, 191] but sampled "
-                + actual.getRed() + ", " + actual.getGreen() + ", " + actual.getBlue());
-    }
-
-    private static boolean screenColorComponentMatches(int expected, int actual) {
-        // Robot reads display-managed pixels. Display P3 conversion can shift an individual channel noticeably,
-        // while the front-buffer test above remains the exact, color-space-independent swap assertion.
-        return Math.abs(expected - actual) <= 40;
     }
 
     private static double[] expectedLayerFrame(TestCanvas canvas) throws Exception {

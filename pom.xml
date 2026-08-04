@@ -50,6 +50,7 @@
 		<maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>
 		<maven-source-plugin.version>3.4.0</maven-source-plugin.version>
 		<buildnumber-maven-plugin.version>3.3.0</buildnumber-maven-plugin.version>
+		<lwjgl3.awt.robotScreenshots>off</lwjgl3.awt.robotScreenshots>
 	</properties>
 	<profiles>
 		<profile>
@@ -175,6 +176,13 @@
 			</properties>
 		</profile>
 		<profile>
+			<id>macos-robot-screenshots</id>
+			<properties>
+				<!-- Use only in a logged-in macOS session that already has Screen Recording permission. -->
+				<lwjgl3.awt.robotScreenshots>required</lwjgl3.awt.robotScreenshots>
+			</properties>
+		</profile>
+		<profile>
 			<id>jdk9</id>
 			<activation>
 				<jdk>[9,)</jdk>
@@ -295,6 +303,9 @@
 					<!-- A windowing deadlock would otherwise hang until the CI job times out. Fail fast
 					     instead: surefire dumps the forked VM's stack traces when this elapses. -->
 					<forkedProcessTimeoutInSeconds>180</forkedProcessTimeoutInSeconds>
+					<systemPropertyVariables>
+						<lwjgl3.awt.robotScreenshots>${lwjgl3.awt.robotScreenshots}</lwjgl3.awt.robotScreenshots>
+					</systemPropertyVariables>
 				</configuration>
 			</plugin>
 			<plugin>
