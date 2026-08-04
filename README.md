@@ -22,6 +22,21 @@ Support for Vulkan:
 _Note about compatibility_:
 The minimum macOS version for OpenGL is 10.5, and the minimum for Vulkan is 10.11, since Vulkan runs on top of the Metal API introduced in that version.
 
+### macOS compositor screenshot tests
+
+The end-to-end screenshot tests use `java.awt.Robot`, which requires Screen & System Audio Recording permission on
+macOS. They are disabled there by default so unattended builds never open macOS privacy UI. On a logged-in Mac where
+the process already has permission, require and run them with:
+
+```shell
+./mvnw -Pmacos-robot-screenshots test
+```
+
+The profile checks the normal screen-capture permission without requesting it and fails before attempting capture when
+it is unavailable. On macOS 15 and later, Apple's separate private-window-picker bypass authorization must also have
+been allowed already; macOS exposes no API that can preflight that authorization. Ordinary framebuffer-based
+screenshot tests continue to run on macOS without this profile.
+
 ## How to use
 Full code samples:
 - [AWTTest](/test/org/lwjgl/opengl/awt/AWTTest.java)

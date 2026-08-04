@@ -34,8 +34,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
+import org.lwjgl.system.Platform;
 
 import static org.lwjgl.opengl.GL.createCapabilities;
 import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
@@ -157,7 +156,7 @@ public class CompareScreenshotTest {
     }
 
     @Test
-    @EnabledOnOs({OS.LINUX, OS.WINDOWS})
+    @EnabledForRobotScreenCapture
     void robotCapturesCanvasInContentPane(TestInfo testInfo)
             throws IOException, InvocationTargetException, InterruptedException {
         DemoCanvas canvas = showSingleCanvas();
@@ -165,7 +164,7 @@ public class CompareScreenshotTest {
     }
 
     @Test
-    @EnabledOnOs({OS.LINUX, OS.WINDOWS})
+    @EnabledForRobotScreenCapture
     void robotCapturesCanvasInSplitPane(TestInfo testInfo)
             throws IOException, InvocationTargetException, InterruptedException {
         DemoCanvas[] canvases = showSplitCanvases();
@@ -173,7 +172,7 @@ public class CompareScreenshotTest {
     }
 
     @Test
-    @EnabledOnOs({OS.LINUX, OS.WINDOWS})
+    @EnabledForRobotScreenCapture
     void robotCapturesReAddedCanvas(TestInfo testInfo)
             throws IOException, InvocationTargetException, InterruptedException {
         DemoCanvas canvas = showSingleCanvas();
@@ -189,7 +188,7 @@ public class CompareScreenshotTest {
     }
 
     @Test
-    @EnabledOnOs({OS.LINUX, OS.WINDOWS})
+    @EnabledForRobotScreenCapture
     void robotCapturesHiddenAndShownCanvas(TestInfo testInfo)
             throws IOException, InvocationTargetException, InterruptedException {
         DemoCanvas canvas = showSingleCanvas();
@@ -275,7 +274,7 @@ public class CompareScreenshotTest {
 
     private void compareWithScreenshot(TestInfo testInfo, JFrame frame, AWTGLCanvas... canvases) throws IOException {
         String expectedMethodName = testInfo.getTestMethod().map(Method::getName).orElse("unknown");
-        compareWithExpectedScreenshot(testInfo, expectedMethodName, captureContentPane(frame, canvases));
+        compareWithExpectedScreenshot(testInfo, expectedMethodName, captureContentPane(frame, canvases), false);
     }
 
     private void compareDisplayedWithScreenshot(
@@ -286,13 +285,15 @@ public class CompareScreenshotTest {
         compareWithExpectedScreenshot(
                 testInfo,
                 expectedMethodName,
-                captureDisplayedContentPane(frame, canvases));
+                captureDisplayedContentPane(frame, canvases),
+                true);
     }
 
     private void compareWithExpectedScreenshot(
             TestInfo testInfo,
             String expectedMethodName,
-            BufferedImage background) throws IOException {
+            BufferedImage background,
+            boolean capturedFromDisplay) throws IOException {
         String actualMethodName = testInfo.getTestMethod().map(Method::getName).orElse("unknown");
 
         String screenShotSuffix = "";
@@ -319,8 +320,16 @@ public class CompareScreenshotTest {
 
         //Create ImageComparison object for it.
         ImageComparison imageComparison = new ImageComparison(expectedImage, background, resultDestination);
-        // Ignore a small number of platform-dependent pixels at component boundaries.
-        imageComparison.setAllowingPercentOfDifferentPixels(0.02d);
+        if (capturedFromDisplay && Platform.get() == Platform.MACOSX) {
+            // Robot observes color-managed and Retina-rasterized pixels, as well as the rounded pixels at the
+            // bottom of a macOS window. Keep the permitted area small enough that misplaced or missing canvas
+            // content still fails while tolerating those compositor-only differences.
+            imageComparison.setPixelToleranceLevel(0.20d);
+            imageComparison.setAllowingPercentOfDifferentPixels(0.10d);
+        } else {
+            // Ignore a small number of platform-dependent pixels at component boundaries.
+            imageComparison.setAllowingPercentOfDifferentPixels(0.02d);
+        }
         Assertions.assertEquals(
                 ImageComparisonState.MATCH,
                 imageComparison.compareImages().getImageComparisonState());
@@ -329,18 +338,21 @@ public class CompareScreenshotTest {
     /**
      * Captures the pixels presented by the window system. This retains end-to-end
      * coverage of native canvas placement, visibility and buffer presentation on
-     * platforms where Robot screen capture does not require user permission.
+     * platforms where Robot screen capture is enabled by {@link EnabledForRobotScreenCapture}.
      */
     private BufferedImage captureDisplayedContentPane(JFrame frame, AWTGLCanvas... canvases) throws IOException {
         final Rectangle[] captureBounds = new Rectangle[1];
         try {
             SwingUtilities.invokeAndWait(() -> {
+                if (frame.isAlwaysOnTopSupported()) {
+                    frame.setAlwaysOnTop(true);
+                }
                 frame.toFront();
+                frame.requestFocus();
                 for (AWTGLCanvas canvas : canvases) {
                     if (!canvas.isValid()) {
                         throw new IllegalStateException("Cannot capture an invalid OpenGL canvas");
                     }
-                    canvas.render();
                 }
 
                 Container contentPane = frame.getContentPane();
@@ -355,12 +367,24 @@ public class CompareScreenshotTest {
             Robot robot = new Robot();
             robot.waitForIdle();
             robot.delay(100);
-            BufferedImage previous = robot.createScreenCapture(captureBounds[0]);
+            BufferedImage previous = null;
             long deadline = System.currentTimeMillis() + SCREEN_STABILITY_TIMEOUT_MILLIS;
             while (System.currentTimeMillis() < deadline) {
+                // macOS applies native layer bounds asynchronously on AppKit's main thread. Rendering each pass
+                // prevents a stable but blank first capture from winning before those bounds have taken effect.
+                SwingUtilities.invokeAndWait(() -> {
+                    for (AWTGLCanvas canvas : canvases) {
+                        if (!canvas.isValid()) {
+                            throw new IllegalStateException("Cannot capture an invalid OpenGL canvas");
+                        }
+                        canvas.render();
+                    }
+                });
+                robot.waitForIdle();
                 robot.delay(50);
                 BufferedImage current = robot.createScreenCapture(captureBounds[0]);
-                if (new ImageComparison(previous, current).compareImages().getDifferencePercent() == 0.0f) {
+                if (previous != null
+                        && new ImageComparison(previous, current).compareImages().getDifferencePercent() == 0.0f) {
                     return current;
                 }
                 previous = current;
