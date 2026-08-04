@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -93,6 +94,76 @@ class AWTGLCanvasLifecycleTest {
 
         assertThrows(IllegalStateException.class, canvas::render);
 
+        assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "makeCurrent:0", "unlock"),
+                platform.calls);
+    }
+
+    @Test
+    void renderDoesNotInvokeCallbacksWhenMakingContextCurrentFails() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.makeCurrentFailureContext = 42L;
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            public void initGL() {
+                platform.calls.add("init");
+            }
+
+            @Override
+            public void paintGL() {
+                platform.calls.add("paint");
+            }
+        };
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::render);
+
+        assertEquals("Failed to make the OpenGL context current", failure.getMessage());
+        assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "makeCurrent:0", "unlock"),
+                platform.calls);
+    }
+
+    @Test
+    void renderUnlocksDrawingSurfaceWhenClearingCurrentFails() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.makeCurrentFailureContext = 0L;
+        TestCanvas canvas = new TestCanvas(platform);
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::render);
+
+        assertEquals("Failed to clear the current OpenGL context", failure.getMessage());
+        assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "makeCurrent:0", "unlock"),
+                platform.calls);
+    }
+
+    @Test
+    void renderPreservesCallbackFailureWhenCleanupAlsoFails() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.makeCurrentFailureContext = 0L;
+        IllegalStateException paintFailure = new IllegalStateException("paint failed");
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            public void paintGL() {
+                throw paintFailure;
+            }
+        };
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::render);
+
+        assertSame(paintFailure, failure);
+        assertEquals(1, failure.getSuppressed().length);
+        assertEquals("Failed to clear the current OpenGL context", failure.getSuppressed()[0].getMessage());
+        assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "makeCurrent:0", "unlock"),
+                platform.calls);
+    }
+
+    @Test
+    void renderUnlocksDrawingSurfaceWhenMakingContextCurrentThrows() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.makeCurrentExceptionContext = 42L;
+        TestCanvas canvas = new TestCanvas(platform);
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::render);
+
+        assertEquals("make current failed", failure.getMessage());
         assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "makeCurrent:0", "unlock"),
                 platform.calls);
     }
@@ -229,6 +300,8 @@ class AWTGLCanvasLifecycleTest {
         final List<String> calls = Collections.synchronizedList(new ArrayList<>());
         final CountDownLatch deleteCalled = new CountDownLatch(1);
         RuntimeException deleteFailure;
+        long makeCurrentFailureContext = Long.MIN_VALUE;
+        long makeCurrentExceptionContext = Long.MIN_VALUE;
 
         @Override
         public long create(Canvas canvas, GLData data, GLData effective) {
@@ -249,7 +322,10 @@ class AWTGLCanvasLifecycleTest {
         @Override
         public boolean makeCurrent(long context) {
             calls.add("makeCurrent:" + context);
-            return true;
+            if (context == makeCurrentExceptionContext) {
+                throw new IllegalStateException("make current failed");
+            }
+            return context != makeCurrentFailureContext;
         }
 
         @Override
