@@ -427,9 +427,14 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     @Override
     public boolean makeCurrent(long context) {
-        CGLSetCurrentContext(context);
+        if (CGLSetCurrentContext(context) != kCGLNoError) {
+            return false;
+        }
         if (context != 0L) {
             JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+            if (dsi == null) {
+                return false;
+            }
             try {
                 int width = dsi.bounds().width();
                 int height = dsi.bounds().height();
@@ -438,8 +443,11 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     AffineTransform transform = canvas.getGraphicsConfiguration().getDefaultTransform();
                     int backingWidth = (int) (width * transform.getScaleX());
                     int backingHeight = (int) (height * transform.getScaleY());
-                    CGLSetParameter(context, kCGLCPSurfaceBackingSize, new int[]{backingWidth, backingHeight});
-                    CGLEnable(context, kCGLCESurfaceBackingSize);
+                    if (CGLSetParameter(context, kCGLCPSurfaceBackingSize,
+                            new int[]{backingWidth, backingHeight}) != kCGLNoError
+                            || CGLEnable(context, kCGLCESurfaceBackingSize) != kCGLNoError) {
+                        return false;
+                    }
                     this.width = width;
                     this.height = height;
                 }

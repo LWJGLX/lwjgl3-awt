@@ -15,7 +15,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * An AWT {@link Canvas} that supports to be drawn on using OpenGL.
  *
  * <p>Rendering and context callbacks execute while this canvas's lifecycle lock is held. They must not synchronously
- * wait for AWT's event-dispatch thread, because that thread may be waiting to remove or dispose this canvas.</p>
+ * wait for AWT's event-dispatch thread or acquire AWT's tree lock, because that thread may already hold the tree lock
+ * while waiting to remove or dispose this canvas. Post AWT work asynchronously instead.</p>
  * 
  * @author Kai Burjack
  */
@@ -113,26 +114,82 @@ public abstract class AWTGLCanvas extends Canvas {
         } catch (AWTException e) {
             throw new RuntimeException("Failed to lock Canvas", e);
         }
-        platformCanvas.makeCurrent(context);
+        try {
+            if (!platformCanvas.makeCurrent(context)) {
+                throw new IllegalStateException("Failed to make the OpenGL context current");
+            }
+        } catch (RuntimeException | Error failure) {
+            releaseDrawingSurfaceAfterFailure(failure);
+            throw failure;
+        }
     }
 
     protected void afterRender() {
-        platformCanvas.makeCurrent(0L);
+        Throwable failure = null;
+        try {
+            if (!platformCanvas.makeCurrent(0L)) {
+                failure = new IllegalStateException("Failed to clear the current OpenGL context");
+            }
+        } catch (RuntimeException | Error e) {
+            failure = e;
+        }
         try {
             platformCanvas.unlock(); // <- MUST unlock on Linux
         } catch (AWTException e) {
-            throw new RuntimeException("Failed to unlock Canvas", e);
+            RuntimeException unlockFailure = new RuntimeException("Failed to unlock Canvas", e);
+            if (failure == null) {
+                failure = unlockFailure;
+            } else {
+                failure.addSuppressed(unlockFailure);
+            }
+        } catch (RuntimeException | Error e) {
+            if (failure == null) {
+                failure = e;
+            } else {
+                failure.addSuppressed(e);
+            }
         }
+        if (failure != null) {
+            rethrow(failure);
+        }
+    }
+
+    private void releaseDrawingSurfaceAfterFailure(Throwable failure) {
+        try {
+            if (!platformCanvas.makeCurrent(0L)) {
+                failure.addSuppressed(new IllegalStateException("Failed to clear the current OpenGL context"));
+            }
+        } catch (RuntimeException | Error e) {
+            failure.addSuppressed(e);
+        }
+        try {
+            platformCanvas.unlock();
+        } catch (AWTException e) {
+            failure.addSuppressed(new RuntimeException("Failed to unlock Canvas", e));
+        } catch (RuntimeException | Error e) {
+            failure.addSuppressed(e);
+        }
+    }
+
+    private static void rethrow(Throwable failure) {
+        if (failure instanceof Error) {
+            throw (Error) failure;
+        }
+        throw (RuntimeException) failure;
     }
 
     public <T> T executeInContext(Callable<T> callable) throws Exception {
         lifecycleLock.lock();
         try {
             beforeRender();
+            Throwable callbackFailure = null;
             try {
                 return callable.call();
+            } catch (Exception | Error failure) {
+                callbackFailure = failure;
+                throw failure;
             } finally {
-                afterRender();
+                afterRender(callbackFailure);
             }
         } finally {
             lifecycleLock.unlock();
@@ -143,10 +200,14 @@ public abstract class AWTGLCanvas extends Canvas {
         lifecycleLock.lock();
         try {
             beforeRender();
+            Throwable callbackFailure = null;
             try {
                 runnable.run();
+            } catch (RuntimeException | Error failure) {
+                callbackFailure = failure;
+                throw failure;
             } finally {
-                afterRender();
+                afterRender(callbackFailure);
             }
         } finally {
             lifecycleLock.unlock();
@@ -156,24 +217,43 @@ public abstract class AWTGLCanvas extends Canvas {
     /**
      * Makes this canvas's context current and invokes {@link #initGL()} when necessary, followed by {@link #paintGL()}.
      *
-     * <p>The callbacks run while the lifecycle lock is held and must not call {@link EventQueue#invokeAndWait(Runnable)}
-     * or otherwise wait synchronously for the event-dispatch thread.</p>
+     * <p>The callbacks run while the lifecycle lock is held. They must not call
+     * {@link EventQueue#invokeAndWait(Runnable)}, synchronize on {@link Component#getTreeLock()}, or invoke AWT/Swing
+     * operations that acquire the tree lock. Such calls can deadlock with canvas removal on the event-dispatch thread.
+     * Post AWT work asynchronously instead.</p>
      */
     public void render() {
         lifecycleLock.lock();
         try {
             beforeRender();
+            Throwable callbackFailure = null;
             try {
                 if (!initCalled) {
                     initGL();
                     initCalled = true;
                 }
                 paintGL();
+            } catch (RuntimeException | Error failure) {
+                callbackFailure = failure;
+                throw failure;
             } finally {
-                afterRender();
+                afterRender(callbackFailure);
             }
         } finally {
             lifecycleLock.unlock();
+        }
+    }
+
+    private void afterRender(Throwable callbackFailure) {
+        try {
+            afterRender();
+        } catch (RuntimeException | Error cleanupFailure) {
+            if (callbackFailure == null) {
+                throw cleanupFailure;
+            }
+            if (callbackFailure != cleanupFailure) {
+                callbackFailure.addSuppressed(cleanupFailure);
+            }
         }
     }
 
