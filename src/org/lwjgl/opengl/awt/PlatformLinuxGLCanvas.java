@@ -9,6 +9,7 @@ import static org.lwjgl.opengl.GLXARBCreateContextProfile.*;
 import static org.lwjgl.opengl.GLXARBCreateContextRobustness.*;
 import static org.lwjgl.opengl.GLXARBRobustnessApplicationIsolation.*;
 import static org.lwjgl.opengl.GLXEXTCreateContextESProfile.*;
+import static org.lwjgl.opengl.GLXEXTSwapControl.*;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
@@ -59,6 +60,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
 		int screen = X11.XDefaultScreen(display);
+		List<String> extensions = Arrays.asList(glXQueryExtensionsString(display, screen).split(" "));
 		IntBuffer attrib_list = BufferUtils.createIntBuffer(16 * 2);
 		attrib_list.put(GLX_DRAWABLE_TYPE).put(GLX_WINDOW_BIT);
 		attrib_list.put(GLX_RENDER_TYPE).put(GLX_RGBA_BIT);
@@ -75,7 +77,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AWTException("No supported framebuffer configurations found");
 		}
 
-		verifyGLXCapabilities(display, screen, attribs);
+		verifyGLXCapabilities(extensions, attribs);
 		IntBuffer gl_attrib_list = bufferGLAttribs(attribs);
 		
 		long share_context = NULL;
@@ -96,6 +98,9 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 		if (!makeCurrent(context)) {
 			throw new AWTException("Unable to make context current");
+		}
+		if (attribs.swapInterval != null) {
+			glXSwapIntervalEXT(display, drawable, attribs.swapInterval);
 		}
 		populateEffectiveGLAttribs(effective);
 		makeCurrent(0 /* no context */);
@@ -256,8 +261,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		canvas = null;
 	}
 
-	private static void verifyGLXCapabilities(long display, int screen, GLData data) throws AWTException {
-		List<String> extensions = Arrays.asList(glXQueryExtensionsString(display, screen).split(" "));
+	private static void verifyGLXCapabilities(List<String> extensions, GLData data) throws AWTException {
 		if (!extensions.contains("GLX_ARB_create_context")) {
 			throw new AWTException("GLX_ARB_create_context is unavailable");
 		}
@@ -273,6 +277,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		if (data.contextResetIsolation && !extensions.contains("GLX_ARB_robustness_application_isolation")) {
 			throw new AWTException("OpenGL robustness requested but GLX_ARB_robustness_application_isolation is unavailable");
 		}
+		LinuxGLDataUtil.validateSwapInterval(data.swapInterval, extensions);
 	}
 
 	private static IntBuffer bufferGLAttribs(GLData data) throws AWTException {
