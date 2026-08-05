@@ -215,3 +215,114 @@ jobs:
           name: crash-logs-macos-${{ matrix.arch }}
           path: 'crash-logs/'
           if-no-files-found: warn
+  smoke-modern-jdks:
+    name: Smoke on ${{ matrix.os_name }} (JDK ${{ matrix.java_version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os_name: Linux
+            artifact_os: linux
+            runner: ubuntu-24.04
+            java_version: '17'
+          - os_name: Linux
+            artifact_os: linux
+            runner: ubuntu-24.04
+            java_version: '21'
+          - os_name: Windows
+            artifact_os: windows
+            runner: windows-2025
+            java_version: '17'
+          - os_name: Windows
+            artifact_os: windows
+            runner: windows-2025
+            java_version: '21'
+          - os_name: macOS
+            artifact_os: macos
+            runner: macos-15-intel
+            java_version: '17'
+          - os_name: macOS
+            artifact_os: macos
+            runner: macos-15-intel
+            java_version: '21'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK ${{ matrix.java_version }}
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          java-version: ${{ matrix.java_version }}
+          distribution: 'zulu'
+          architecture: x64
+          cache: maven
+      - name: Update Package Information
+        if: runner.os == 'Linux'
+        run: sudo apt-get update
+      - name: Install Dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y git xvfb x11-utils mesa*
+      - name: Register Mesa as the OpenGL driver
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MESA_VERSION: '26.1.4'
+          MESA_SHA256: '3804c66059c17b7ce12ca8596782585547e20c2185938f89663ec7b807ef0a84'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
+          $extracted = Join-Path $env:RUNNER_TEMP 'mesa'
+          $url = "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
+          curl.exe --fail --location --retry 5 --retry-all-errors --retry-delay 10 --output "$archive" "$url"
+          $hash = (Get-FileHash "$archive" -Algorithm SHA256).Hash
+          if ($hash -ne $env:MESA_SHA256.ToUpper()) {
+            throw "Mesa checksum mismatch: expected $env:MESA_SHA256, got $hash"
+          }
+          7z x "$archive" "-o$extracted" 'x64\libgallium_wgl.dll' 'x64\dxil.dll'
+          $system32 = Join-Path $env:SystemRoot 'System32'
+          Copy-Item (Join-Path $extracted 'x64\libgallium_wgl.dll') (Join-Path $system32 'mesadrv.dll') -Force
+          Copy-Item (Join-Path $extracted 'x64\dxil.dll') $system32 -Force
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\MSOGL'
+          New-Item -Path $key -Force | Out-Null
+          Set-ItemProperty -Path $key -Name 'DLL' -Value 'mesadrv.dll' -Type String
+          Set-ItemProperty -Path $key -Name 'DriverVersion' -Value 1 -Type DWord
+          Set-ItemProperty -Path $key -Name 'Flags' -Value 1 -Type DWord
+          Set-ItemProperty -Path $key -Name 'Version' -Value 2 -Type DWord
+          Get-Item (Join-Path $system32 'mesadrv.dll') | Format-Table Name, Length
+          Get-ItemProperty -Path $key | Format-List DLL, DriverVersion, Flags, Version
+      - name: Run repeated lifecycle smoke (Linux)
+        if: runner.os == 'Linux'
+        env:
+          GALLIUM_DRIVER: llvmpipe
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          export XVFB_WHD="1920x1080x24"
+          export DISPLAY=":99"
+          Xvfb :99 -ac -screen 0 "$XVFB_WHD" -nolisten tcp +extension GLX +render -noreset &
+          Xvfb_pid="$!"
+          trap 'kill "$Xvfb_pid" 2>/dev/null || true' EXIT
+          if ! timeout 10s bash -c 'until xdpyinfo -display "$DISPLAY" > /dev/null 2>&1; do sleep 0.1; done'; then
+            echo "::error::Xvfb did not become ready within 10 seconds"
+            exit 1
+          fi
+          ./mvnw -B -Dtest=JAWTDrawingSurfaceThreadLifetimeTest test
+      - name: Run repeated lifecycle smoke (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: ./mvnw -B -Dtest=JAWTDrawingSurfaceThreadLifetimeTest test
+        env:
+          GALLIUM_DRIVER: llvmpipe
+          LIBGL_ALWAYS_SOFTWARE: '1'
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lifecycle-smoke-${{ matrix.artifact_os }}-jdk-${{ matrix.java_version }}
+          path: |
+            hs_err_pid*.log
+            target/hs_err_pid*.log
+            target/surefire-reports/
+          if-no-files-found: warn
