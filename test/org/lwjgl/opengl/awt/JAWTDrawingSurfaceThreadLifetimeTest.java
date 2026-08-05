@@ -13,11 +13,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class JAWTDrawingSurfaceThreadLifetimeTest {
+    private static final int LIFECYCLE_CYCLES = 10;
 
     @Test
-    void disposesCanvasAfterRenderingThreadExits() throws Exception {
-        AtomicReference<AWTGLCanvas> canvasRef = new AtomicReference<>();
-        AtomicReference<JFrame> frameRef = new AtomicReference<>();
+    void repeatedlyCreatesRendersRemovesAndDisposesCanvasAfterRenderingThreadExits() throws Exception {
+        for (int cycle = 0; cycle < LIFECYCLE_CYCLES; cycle++) {
+            runLifecycle(cycle);
+        }
+    }
+
+    private static void runLifecycle(int cycle) throws Exception {
+        AtomicReference<Lifecycle> lifecycleRef = new AtomicReference<>();
 
         SwingUtilities.invokeAndWait(() -> {
             AWTGLCanvas canvas = new AWTGLCanvas(new GLData()) {
@@ -33,33 +39,46 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
             };
             canvas.setPreferredSize(new Dimension(320, 240));
 
-            JFrame frame = new JFrame("dispose-after-render-thread-exits");
+            JFrame frame = new JFrame("dispose-after-render-thread-exits-" + cycle);
             frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
             frame.getContentPane().add(canvas);
             frame.pack();
             frame.setVisible(true);
 
-            canvasRef.set(canvas);
-            frameRef.set(frame);
+            lifecycleRef.set(new Lifecycle(frame, canvas));
         });
 
+        Lifecycle lifecycle = lifecycleRef.get();
         AtomicReference<Throwable> renderFailure = new AtomicReference<>();
         Thread renderer = new Thread(() -> {
             try {
-                canvasRef.get().render();
+                lifecycle.canvas.render();
             } catch (Throwable t) {
                 renderFailure.set(t);
             }
-        }, "short-lived-renderer");
-        renderer.start();
-        renderer.join(TimeUnit.SECONDS.toMillis(10));
-        assertFalse(renderer.isAlive(), "Rendering thread did not exit");
+        }, "short-lived-renderer-" + cycle);
 
-        SwingUtilities.invokeAndWait(() -> frameRef.get().getContentPane().remove(canvasRef.get()));
-        SwingUtilities.invokeAndWait(frameRef.get()::dispose);
+        try {
+            renderer.start();
+            renderer.join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(renderer.isAlive(), "Rendering thread did not exit in cycle " + cycle);
+        } finally {
+            SwingUtilities.invokeAndWait(() -> lifecycle.frame.getContentPane().remove(lifecycle.canvas));
+            SwingUtilities.invokeAndWait(lifecycle.frame::dispose);
+        }
 
         if (renderFailure.get() != null) {
-            fail("Rendering failed", renderFailure.get());
+            fail("Rendering failed in cycle " + cycle, renderFailure.get());
+        }
+    }
+
+    private static class Lifecycle {
+        final JFrame frame;
+        final AWTGLCanvas canvas;
+
+        Lifecycle(JFrame frame, AWTGLCanvas canvas) {
+            this.frame = frame;
+            this.canvas = canvas;
         }
     }
 }
