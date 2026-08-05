@@ -7,6 +7,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  MESA_VERSION: '26.1.4'
+  MESA_SHA256: '3804c66059c17b7ce12ca8596782585547e20c2185938f89663ec7b807ef0a84'
+
 jobs:
   test-linux:
     name: Test on Linux (${{ matrix.arch }})
@@ -46,7 +50,10 @@ jobs:
     - name: Install Dependencies
       timeout-minutes: 5
       run: |
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+        sudo env \
+          DEBIAN_FRONTEND=noninteractive \
+          NEEDRESTART_SUSPEND=1 \
+          apt-get \
           -o Acquire::Retries=3 \
           -o Acquire::http::Timeout=30 \
           -o Acquire::https::Timeout=30 \
@@ -56,6 +63,8 @@ jobs:
           libglx-mesa0 \
           mesa-utils \
           x11-utils \
+          xauth \
+          xfonts-base \
           xvfb
     - name: Build with Maven
       run: |
@@ -73,6 +82,7 @@ jobs:
           exit 1
         fi
         echo "Xvfb is running."
+        glxinfo -B
 
         ./mvnw -B test
     - name: Upload Images
@@ -121,9 +131,6 @@ jobs:
       - name: Register Mesa as the OpenGL driver
         if: matrix.mesa
         shell: pwsh
-        env:
-          MESA_VERSION: '26.1.4'
-          MESA_SHA256: '3804c66059c17b7ce12ca8596782585547e20c2185938f89663ec7b807ef0a84'
         run: |
           $ErrorActionPreference = 'Stop'
           $archive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
@@ -291,7 +298,10 @@ jobs:
         if: runner.os == 'Linux'
         timeout-minutes: 5
         run: |
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+          sudo env \
+            DEBIAN_FRONTEND=noninteractive \
+            NEEDRESTART_SUSPEND=1 \
+            apt-get \
             -o Acquire::Retries=3 \
             -o Acquire::http::Timeout=30 \
             -o Acquire::https::Timeout=30 \
@@ -301,13 +311,12 @@ jobs:
             libglx-mesa0 \
             mesa-utils \
             x11-utils \
+            xauth \
+            xfonts-base \
             xvfb
       - name: Register Mesa as the OpenGL driver
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          MESA_VERSION: '26.1.4'
-          MESA_SHA256: '3804c66059c17b7ce12ca8596782585547e20c2185938f89663ec7b807ef0a84'
         run: |
           $ErrorActionPreference = 'Stop'
           $archive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
@@ -345,13 +354,31 @@ jobs:
             echo "::error::Xvfb did not become ready within 10 seconds"
             exit 1
           fi
+          glxinfo -B
           ./mvnw -B -Dtest=JAWTDrawingSurfaceThreadLifetimeTest test
-      - name: Run repeated lifecycle smoke (Windows and macOS)
-        if: runner.os != 'Linux'
+      - name: Run repeated lifecycle smoke (Windows)
+        if: runner.os == 'Windows'
         run: ./mvnw -B -Dtest=JAWTDrawingSurfaceThreadLifetimeTest test
         env:
           GALLIUM_DRIVER: llvmpipe
           LIBGL_ALWAYS_SOFTWARE: '1'
+      - name: Run repeated lifecycle smoke (macOS)
+        if: runner.os == 'macOS'
+        run: ./mvnw -B -Dtest=JAWTDrawingSurfaceThreadLifetimeTest test
+      - name: Collect macOS smoke diagnostics
+        if: failure() && runner.os == 'macOS'
+        run: |
+          mkdir -p smoke-crash-logs
+          cp -v replay_pid*.log smoke-crash-logs/ 2>/dev/null || true
+          cp -v target/replay_pid*.log smoke-crash-logs/ 2>/dev/null || true
+          if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
+            cp -rv "$HOME/Library/Logs/DiagnosticReports" \
+              smoke-crash-logs/user-DiagnosticReports 2>/dev/null || true
+          fi
+          if [ -d /Library/Logs/DiagnosticReports ]; then
+            sudo cp -rv /Library/Logs/DiagnosticReports \
+              smoke-crash-logs/system-DiagnosticReports 2>/dev/null || true
+          fi
       - name: Upload smoke diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -360,5 +387,8 @@ jobs:
           path: |
             hs_err_pid*.log
             target/hs_err_pid*.log
+            replay_pid*.log
+            target/replay_pid*.log
+            smoke-crash-logs/
             target/surefire-reports/
           if-no-files-found: warn
