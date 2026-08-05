@@ -249,7 +249,11 @@ public class CompareScreenshotTest {
     private static GLData createGLData() {
         GLData data = new GLData();
         data.samples = 0;
-        data.swapInterval = 0;
+        // Linux CI uses Xvfb, which may not expose GLX_EXT_swap_control. Swap interval behavior is
+        // covered separately by LinuxSwapIntervalIntegrationTest on displays that support it.
+        if (Platform.get() != Platform.LINUX) {
+            data.swapInterval = 0;
+        }
         return data;
     }
 
