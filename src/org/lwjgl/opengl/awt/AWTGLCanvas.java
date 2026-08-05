@@ -29,7 +29,7 @@ public abstract class AWTGLCanvas extends Canvas {
         case WINDOWS:
             return new PlatformWin32GLCanvas();
         case LINUX:
-            return new PlatformLinuxGLCanvas();
+            return PlatformLinuxGLCanvasFactory.create();
         case MACOSX:
             return new PlatformMacOSXGLCanvas();
         default:

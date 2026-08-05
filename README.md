@@ -22,6 +22,10 @@ Support for Vulkan:
 _Note about compatibility_:
 The minimum macOS version for OpenGL is 10.5, and the minimum for Vulkan is 10.11, since Vulkan runs on top of the Metal API introduced in that version.
 
+On Linux, Wayland sessions use EGL with the X11 window exposed by AWT under XWayland, matching LWJGL's default
+context API selection. Set `Configuration.OPENGL_CONTEXT_API` to `native` before LWJGL initializes OpenGL to force
+the GLX backend. This does not provide a native Wayland AWT surface.
+
 ### macOS compositor screenshot tests
 
 The end-to-end screenshot tests use `java.awt.Robot`, which requires Screen & System Audio Recording permission on
