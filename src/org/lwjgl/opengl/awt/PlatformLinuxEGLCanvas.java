@@ -341,7 +341,9 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
         if (!data.doubleBuffer) {
             attributes.put(EGL_RENDER_BUFFER).put(EGL_SINGLE_BUFFER);
         }
-        return attributes.put(EGL_NONE).flip();
+        attributes.put(EGL_NONE);
+        attributes.flip();
+        return attributes;
     }
 
     private static PointerBuffer platformSurfaceAttributes(MemoryStack stack, GLData data) {
