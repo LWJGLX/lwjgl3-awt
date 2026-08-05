@@ -36,9 +36,27 @@ jobs:
         architecture: ${{ matrix.java_architecture }}
         cache: maven
     - name: Update Package Information
-      run: sudo apt-get update
+      timeout-minutes: 5
+      run: |
+        sudo apt-get \
+          -o Acquire::Retries=3 \
+          -o Acquire::http::Timeout=30 \
+          -o Acquire::https::Timeout=30 \
+          update
     - name: Install Dependencies
-      run: sudo apt-get install -y git xvfb x11-utils mesa*
+      timeout-minutes: 5
+      run: |
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+          -o Acquire::Retries=3 \
+          -o Acquire::http::Timeout=30 \
+          -o Acquire::https::Timeout=30 \
+          install -y --no-install-recommends \
+          git \
+          libgl1-mesa-dri \
+          libglx-mesa0 \
+          mesa-utils \
+          x11-utils \
+          xvfb
     - name: Build with Maven
       run: |
         export XVFB_WHD="1920x1080x24"
@@ -262,10 +280,28 @@ jobs:
           cache: maven
       - name: Update Package Information
         if: runner.os == 'Linux'
-        run: sudo apt-get update
+        timeout-minutes: 5
+        run: |
+          sudo apt-get \
+            -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            update
       - name: Install Dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y git xvfb x11-utils mesa*
+        timeout-minutes: 5
+        run: |
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            install -y --no-install-recommends \
+            git \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
+            mesa-utils \
+            x11-utils \
+            xvfb
       - name: Register Mesa as the OpenGL driver
         if: runner.os == 'Windows'
         shell: pwsh
