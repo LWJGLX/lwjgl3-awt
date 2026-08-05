@@ -85,6 +85,10 @@ jobs:
         glxinfo -B
 
         ./mvnw -B test
+
+        echo "Running EGL smoke test with Wayland backend selection"
+        XDG_SESSION_TYPE=wayland WAYLAND_DISPLAY=wayland-test \
+          ./mvnw -B -Dtest=LinuxEGLCanvasIntegrationTest,CompareScreenshotTest test
     - name: Upload Images
       if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
