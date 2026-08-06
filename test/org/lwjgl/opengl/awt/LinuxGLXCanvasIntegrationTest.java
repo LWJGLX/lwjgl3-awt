@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @EnabledOnOs(OS.LINUX)
 class LinuxGLXCanvasIntegrationTest {
@@ -40,13 +41,21 @@ class LinuxGLXCanvasIntegrationTest {
                 canvasRef.set(canvas);
             });
 
-            SwingUtilities.invokeAndWait(() -> {
-                TestCanvas canvas = canvasRef.get();
-                canvas.render();
-                assertTrue(canvas.platformCanvas instanceof PlatformLinuxGLCanvas);
-                assertTrue(canvas.effective.sampleBuffers > 0);
-                assertTrue(canvas.effective.samples >= 4);
-            });
+            try {
+                SwingUtilities.invokeAndWait(() -> {
+                    TestCanvas canvas = canvasRef.get();
+                    canvas.render();
+                    assertTrue(canvas.platformCanvas instanceof PlatformLinuxGLCanvas);
+                    assertTrue(canvas.effective.sampleBuffers > 0);
+                    assertTrue(canvas.effective.samples >= 4);
+                });
+            } catch (Exception e) {
+                String unsupportedReason = findUnsupportedMultisamplingReason(e);
+                if (unsupportedReason != null) {
+                    assumeTrue(false, "Native 4x MSAA is unavailable: " + unsupportedReason);
+                }
+                throw e;
+            }
         } finally {
             SwingUtilities.invokeAndWait(() -> {
                 GL.setCapabilities(null);
@@ -64,6 +73,16 @@ class LinuxGLXCanvasIntegrationTest {
                         System.getenv("XDG_SESSION_TYPE"),
                         System.getenv("WAYLAND_DISPLAY")),
                 "GLX is not selected");
+    }
+
+    private static String findUnsupportedMultisamplingReason(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null && message.contains("No supported framebuffer configurations found")) {
+                return message;
+            }
+        }
+        return null;
     }
 
     private static final class TestCanvas extends AWTGLCanvas {
