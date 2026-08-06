@@ -4,6 +4,8 @@ import static org.lwjgl.system.jawt.JAWTFunctions.*;
 import static org.lwjgl.system.MemoryUtil.*;
 import static org.lwjgl.opengl.GLX.*;
 import static org.lwjgl.opengl.GLX13.*;
+import static org.lwjgl.opengl.GLX14.GLX_SAMPLE_BUFFERS;
+import static org.lwjgl.opengl.GLX14.GLX_SAMPLES;
 import static org.lwjgl.opengl.GLXARBCreateContext.*;
 import static org.lwjgl.opengl.GLXARBCreateContextProfile.*;
 import static org.lwjgl.opengl.GLXARBCreateContextRobustness.*;
@@ -67,6 +69,10 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		attrib_list.put(GLX_BLUE_SIZE).put(attribs.blueSize);
 		attrib_list.put(GLX_DEPTH_SIZE).put(attribs.depthSize);
 		attrib_list.put(GLX_DOUBLEBUFFER).put(attribs.doubleBuffer ? 1 : 0);
+		if (attribs.samples > 0) {
+			attrib_list.put(GLX_SAMPLE_BUFFERS).put(1);
+			attrib_list.put(GLX_SAMPLES).put(attribs.samples);
+		}
 		attrib_list.put(0);
 		attrib_list.flip();
 		PointerBuffer fbConfigs = glXChooseFBConfig(display, screen, attrib_list);
@@ -404,6 +410,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			effective.loseContextOnReset = (effectiveNotificationStrategy & ARBRobustness.GL_LOSE_CONTEXT_ON_RESET_ARB) != 0;
 		}
 
+		effective.sampleBuffers = getInteger(GL13.GL_SAMPLE_BUFFERS, glGetIntegerv);
 		effective.samples = getInteger(GL13.GL_SAMPLES, glGetIntegerv);
 	}
 
