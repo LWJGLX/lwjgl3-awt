@@ -60,8 +60,21 @@ public abstract class AWTGLCanvas extends Canvas {
     public void removeNotify() {
         lifecycleLock.lock();
         try {
-            super.removeNotify();
-            disposeCanvas();
+            Throwable failure = null;
+            try {
+                // disposeGL() needs the native peer in order to make the context current.
+                disposeCanvas();
+            } catch (RuntimeException | Error e) {
+                failure = e;
+            }
+            try {
+                super.removeNotify();
+            } catch (RuntimeException | Error e) {
+                failure = appendFailure(failure, e);
+            }
+            if (failure != null) {
+                rethrow(failure);
+            }
         } finally {
             lifecycleLock.unlock();
         }
@@ -73,28 +86,59 @@ public abstract class AWTGLCanvas extends Canvas {
     }
 
     /**
-     * Deletes the OpenGL context and releases platform-specific canvas resources.
+     * Invokes {@link #disposeGL()}, deletes the OpenGL context, and releases platform-specific canvas resources.
      *
      * <p>If rendering is in progress on another thread, this method waits for that operation to finish before deleting
-     * the context. Applications remain responsible for stopping any render loop before disposing the canvas.</p>
+     * the context. Applications remain responsible for stopping any render loop before disposing the canvas. The
+     * callback runs on the thread that calls this method, which may differ from the rendering thread. If the callback
+     * fails, context deletion and platform cleanup are still attempted before the failure is rethrown.</p>
      */
     public void disposeCanvas() {
         lifecycleLock.lock();
         try {
-            try {
-                if (context != 0L) {
-                    platformCanvas.deleteContext(context);
+            Throwable failure = null;
+            long contextToDelete = context;
+            if (contextToDelete != 0L) {
+                try {
+                    disposeGLInContext();
+                } catch (RuntimeException | Error e) {
+                    failure = e;
                 }
-            } finally {
-                // prepare for a possible re-adding
-                context = 0L;
-                initCalled = false;
+                try {
+                    platformCanvas.deleteContext(contextToDelete);
+                } catch (RuntimeException | Error e) {
+                    failure = appendFailure(failure, e);
+                }
+            }
+            // prepare for a possible re-adding
+            context = 0L;
+            initCalled = false;
+            try {
                 platformCanvas.dispose();
+            } catch (RuntimeException | Error e) {
+                failure = appendFailure(failure, e);
+            }
+            if (failure != null) {
+                rethrow(failure);
             }
         } finally {
             lifecycleLock.unlock();
         }
     }
+
+    private void disposeGLInContext() {
+        lockAndMakeCurrent(false);
+        Throwable callbackFailure = null;
+        try {
+            disposeGL();
+        } catch (RuntimeException | Error failure) {
+            callbackFailure = failure;
+            throw failure;
+        } finally {
+            afterDisposeGL(callbackFailure);
+        }
+    }
+
     protected AWTGLCanvas(GLData data) {
         this.data = data;
         this.addComponentListener(listener);
@@ -113,6 +157,10 @@ public abstract class AWTGLCanvas extends Canvas {
                 throw new RuntimeException("Exception while creating the OpenGL context", e);
             }
         }
+        lockAndMakeCurrent(true);
+    }
+
+    private void lockAndMakeCurrent(boolean updateFramebuffer) {
         try {
             platformCanvas.lock(); // <- MUST lock on Linux
         } catch (AWTException e) {
@@ -122,7 +170,9 @@ public abstract class AWTGLCanvas extends Canvas {
             if (!platformCanvas.makeCurrent(context)) {
                 throw new IllegalStateException("Failed to make the OpenGL context current");
             }
-            updateFramebufferSize();
+            if (updateFramebuffer) {
+                updateFramebufferSize();
+            }
         } catch (RuntimeException | Error failure) {
             releaseDrawingSurfaceAfterFailure(failure);
             throw failure;
@@ -130,6 +180,10 @@ public abstract class AWTGLCanvas extends Canvas {
     }
 
     protected void afterRender() {
+        clearCurrentAndUnlock();
+    }
+
+    private void clearCurrentAndUnlock() {
         Throwable failure = null;
         try {
             if (!platformCanvas.makeCurrent(0L)) {
@@ -181,6 +235,16 @@ public abstract class AWTGLCanvas extends Canvas {
             throw (Error) failure;
         }
         throw (RuntimeException) failure;
+    }
+
+    private static Throwable appendFailure(Throwable failure, Throwable additionalFailure) {
+        if (failure == null) {
+            return additionalFailure;
+        }
+        if (failure != additionalFailure) {
+            failure.addSuppressed(additionalFailure);
+        }
+        return failure;
     }
 
     public <T> T executeInContext(Callable<T> callable) throws Exception {
@@ -253,12 +317,23 @@ public abstract class AWTGLCanvas extends Canvas {
         try {
             afterRender();
         } catch (RuntimeException | Error cleanupFailure) {
-            if (callbackFailure == null) {
-                throw cleanupFailure;
-            }
-            if (callbackFailure != cleanupFailure) {
-                callbackFailure.addSuppressed(cleanupFailure);
-            }
+            handleCleanupFailure(callbackFailure, cleanupFailure);
+        }
+    }
+
+    private void afterDisposeGL(Throwable callbackFailure) {
+        try {
+            clearCurrentAndUnlock();
+        } catch (RuntimeException | Error cleanupFailure) {
+            handleCleanupFailure(callbackFailure, cleanupFailure);
+        }
+    }
+
+    private static void handleCleanupFailure(Throwable callbackFailure, Throwable cleanupFailure) {
+        if (callbackFailure == null) {
+            rethrow(cleanupFailure);
+        } else if (callbackFailure != cleanupFailure) {
+            callbackFailure.addSuppressed(cleanupFailure);
         }
     }
 
@@ -271,6 +346,23 @@ public abstract class AWTGLCanvas extends Canvas {
      * Will be called whenever the {@link Canvas} needs to paint itself.
      */
     public abstract void paintGL();
+
+    /**
+     * Will be called before this canvas's OpenGL context is deleted.
+     *
+     * <p>The drawing surface is locked and the context is current while this callback runs. It is invoked at most once
+     * for each created context, including a context for which {@link #initGL()} did not complete. It is not invoked when
+     * there is no context or when the context cannot be made current.</p>
+     *
+     * <p>This callback runs on the thread that disposes the canvas, which is normally the AWT event-dispatch thread for
+     * automatic removal and may differ from the rendering thread. LWJGL's OpenGL and OpenGL ES capabilities are
+     * thread-local; applications rendering on another thread must install the corresponding capabilities before issuing
+     * GL calls here and clear or restore them before returning.</p>
+     *
+     * <p>This callback must not make the context non-current or invoke this canvas's rendering or disposal methods.</p>
+     */
+    protected void disposeGL() {
+    }
 
     public int getFramebufferWidth() {
         return framebufferWidth;
