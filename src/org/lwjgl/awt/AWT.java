@@ -1,5 +1,6 @@
 package org.lwjgl.awt;
 
+import org.lwjgl.awt.internal.LWJGLVersionChecker;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.Platform;
 import org.lwjgl.system.jawt.JAWT;
@@ -36,6 +37,9 @@ import static org.lwjgl.system.jawt.JAWTFunctions.*;
  * @author Kai Burjack
  */
 public class AWT implements AutoCloseable {
+	static {
+		LWJGLVersionChecker.check();
+	}
 
 	/**
 	 * Native JAWT object.

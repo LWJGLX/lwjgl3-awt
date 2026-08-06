@@ -1,5 +1,6 @@
 package org.lwjgl.opengl.awt;
 
+import org.lwjgl.awt.internal.LWJGLVersionChecker;
 import org.lwjgl.awthacks.NonClearGraphics;
 import org.lwjgl.awthacks.NonClearGraphics2D;
 import org.lwjgl.system.Platform;
@@ -22,6 +23,10 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public abstract class AWTGLCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
+    static {
+        LWJGLVersionChecker.check();
+    }
+
     protected PlatformGLCanvas platformCanvas = createPlatformCanvas();
 
     private static PlatformGLCanvas createPlatformCanvas() {

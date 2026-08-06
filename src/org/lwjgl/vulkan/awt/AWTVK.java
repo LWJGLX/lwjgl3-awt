@@ -1,5 +1,6 @@
 package org.lwjgl.vulkan.awt;
 
+import org.lwjgl.awt.internal.LWJGLVersionChecker;
 import org.lwjgl.system.Platform;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkPhysicalDevice;
@@ -14,6 +15,9 @@ import java.awt.Canvas;
  * and {@link #getSurfaceExtensionName()} must be enabled extensions.
  */
 public class AWTVK {
+	static {
+		LWJGLVersionChecker.check();
+	}
 
 	/**
 	 * Gets the required instance extension for the particular platform.
