@@ -1,5 +1,6 @@
 package org.lwjgl.vulkan.awt;
 
+import org.lwjgl.awt.internal.LWJGLVersionChecker;
 import org.lwjgl.system.Platform;
 import org.lwjgl.vulkan.VkInstance;
 import org.lwjgl.vulkan.VkPhysicalDevice;
@@ -24,6 +25,7 @@ public abstract class AWTVKCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
     private static final PlatformVKCanvas platformCanvas;
     static {
+        LWJGLVersionChecker.check();
         // Enhanced switch would work better :(
         switch (Platform.get()) {
         case WINDOWS:
