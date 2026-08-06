@@ -2,6 +2,7 @@ package org.lwjgl.opengl.awt;
 
 import org.junit.jupiter.api.Test;
 import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.GLCapabilities;
 
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
@@ -12,7 +13,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
+import static org.lwjgl.opengl.GL11.glBindTexture;
+import static org.lwjgl.opengl.GL11.glDeleteTextures;
+import static org.lwjgl.opengl.GL11.glGenTextures;
+import static org.lwjgl.opengl.GL11.glIsTexture;
 
 class JAWTDrawingSurfaceThreadLifetimeTest {
     // Repeating the complete peer and context teardown catches resource leaks that a one-shot smoke test misses.
@@ -29,17 +36,7 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
         AtomicReference<Lifecycle> lifecycleRef = new AtomicReference<>();
 
         SwingUtilities.invokeAndWait(() -> {
-            AWTGLCanvas canvas = new AWTGLCanvas(new GLData()) {
-                @Override
-                public void initGL() {
-                    GL.createCapabilities();
-                }
-
-                @Override
-                public void paintGL() {
-                    swapBuffers();
-                }
-            };
+            LifecycleCanvas canvas = new LifecycleCanvas(cycle);
             canvas.setPreferredSize(new Dimension(320, 240));
 
             JFrame frame = new JFrame("dispose-after-render-thread-exits-" + cycle);
@@ -58,6 +55,8 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
                 lifecycle.canvas.render();
             } catch (Throwable t) {
                 renderFailure.set(t);
+            } finally {
+                GL.setCapabilities(null);
             }
         }, "short-lived-renderer-" + cycle);
         renderer.setDaemon(true);
@@ -92,6 +91,8 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
                         "OpenGL context was not cleared in cycle " + cycle);
                 assertFalse(lifecycle.canvas.initCalled,
                         "Canvas remained initialized after removal in cycle " + cycle);
+                assertTrue(lifecycle.canvas.disposeGLCalled,
+                        "disposeGL was not called in cycle " + cycle);
             });
         } catch (Throwable cleanupFailure) {
             failure = unwrapInvocationFailure(cleanupFailure);
@@ -124,11 +125,53 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
 
     private static class Lifecycle {
         final JFrame frame;
-        final AWTGLCanvas canvas;
+        final LifecycleCanvas canvas;
 
-        Lifecycle(JFrame frame, AWTGLCanvas canvas) {
+        Lifecycle(JFrame frame, LifecycleCanvas canvas) {
             this.frame = frame;
             this.canvas = canvas;
+        }
+    }
+
+    private static final class LifecycleCanvas extends AWTGLCanvas {
+        private final int cycle;
+        private GLCapabilities capabilities;
+        private int texture;
+        private boolean disposeGLCalled;
+
+        LifecycleCanvas(int cycle) {
+            this.cycle = cycle;
+        }
+
+        @Override
+        public void initGL() {
+            capabilities = GL.createCapabilities();
+            texture = glGenTextures();
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+
+        @Override
+        public void paintGL() {
+            swapBuffers();
+        }
+
+        @Override
+        protected void disposeGL() {
+            assertTrue(platformCanvas.isCurrent(context),
+                    "OpenGL context was not current during disposal in cycle " + cycle);
+            GL.setCapabilities(capabilities);
+            try {
+                assertTrue(glIsTexture(texture),
+                        "Test texture did not exist before disposal in cycle " + cycle);
+                glDeleteTextures(texture);
+                assertFalse(glIsTexture(texture),
+                        "Test texture still existed after disposal in cycle " + cycle);
+                texture = 0;
+                disposeGLCalled = true;
+            } finally {
+                GL.setCapabilities(null);
+            }
         }
     }
 }

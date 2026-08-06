@@ -4,8 +4,11 @@ import org.junit.jupiter.api.Test;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
+import java.awt.EventQueue;
+import java.awt.Frame;
 import java.awt.GraphicsConfiguration;
 import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.awt.Transparency;
 import java.awt.geom.AffineTransform;
@@ -16,8 +19,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -78,15 +84,22 @@ class AWTGLCanvasLifecycleTest {
     }
 
     @Test
-    void disposeCanvasDeletesContextBeforeDrawingSurface() {
+    void disposeCanvasInvokesDisposeGLWhileContextIsCurrentBeforeDeletingIt() {
         RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
-        TestCanvas canvas = new TestCanvas(platform);
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void disposeGL() {
+                assertTrue(platform.isCurrent(42L));
+                platform.calls.add("disposeGL");
+            }
+        };
         canvas.context = 42L;
         canvas.initCalled = true;
 
         canvas.disposeCanvas();
 
-        assertEquals(Arrays.asList("delete:42", "dispose"), platform.calls);
+        assertEquals(Arrays.asList("lock", "makeCurrent:42", "disposeGL", "makeCurrent:0", "unlock",
+                "delete:42", "dispose"), platform.calls);
         assertEquals(0L, canvas.context);
         assertFalse(canvas.initCalled);
     }
@@ -101,9 +114,156 @@ class AWTGLCanvasLifecycleTest {
 
         assertThrows(IllegalStateException.class, canvas::disposeCanvas);
 
-        assertEquals(Arrays.asList("delete:42", "dispose"), platform.calls);
+        assertEquals(Arrays.asList("lock", "makeCurrent:42", "makeCurrent:0", "unlock", "delete:42",
+                "dispose"), platform.calls);
         assertEquals(0L, canvas.context);
         assertFalse(canvas.initCalled);
+    }
+
+    @Test
+    void disposeCanvasStillDeletesContextWhenDisposeGLFails() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        IllegalStateException disposeGLFailure = new IllegalStateException("disposeGL failed");
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void disposeGL() {
+                platform.calls.add("disposeGL");
+                throw disposeGLFailure;
+            }
+        };
+        canvas.context = 42L;
+        canvas.initCalled = true;
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::disposeCanvas);
+
+        assertSame(disposeGLFailure, failure);
+        assertEquals(Arrays.asList("lock", "makeCurrent:42", "disposeGL", "makeCurrent:0", "unlock",
+                "delete:42", "dispose"), platform.calls);
+        assertEquals(0L, canvas.context);
+        assertFalse(canvas.initCalled);
+    }
+
+    @Test
+    void disposeCanvasDoesNotInvokeDisposeGLWhenMakingContextCurrentFails() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.makeCurrentFailureContext = 42L;
+        AtomicBoolean callbackCalled = new AtomicBoolean();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void disposeGL() {
+                callbackCalled.set(true);
+            }
+        };
+        canvas.context = 42L;
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::disposeCanvas);
+
+        assertEquals("Failed to make the OpenGL context current", failure.getMessage());
+        assertFalse(callbackCalled.get());
+        assertEquals(Arrays.asList("lock", "makeCurrent:42", "makeCurrent:0", "unlock", "delete:42",
+                "dispose"), platform.calls);
+        assertEquals(0L, canvas.context);
+    }
+
+    @Test
+    void disposeCanvasDoesNotQueryFramebufferSizeBeforeDisposeGL() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.framebufferSizeFailure = new IllegalStateException("size query failed");
+        AtomicBoolean callbackCalled = new AtomicBoolean();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void disposeGL() {
+                callbackCalled.set(true);
+            }
+        };
+        canvas.context = 42L;
+
+        canvas.disposeCanvas();
+
+        assertTrue(callbackCalled.get());
+        assertEquals(Arrays.asList("lock", "makeCurrent:42", "makeCurrent:0", "unlock", "delete:42",
+                "dispose"), platform.calls);
+    }
+
+    @Test
+    void disposeCanvasPreservesCallbackFailureWhenLaterCleanupAlsoFails() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        platform.makeCurrentFailureContext = 0L;
+        platform.deleteFailure = new IllegalStateException("delete failed");
+        platform.disposeFailure = new IllegalStateException("platform dispose failed");
+        IllegalStateException disposeGLFailure = new IllegalStateException("disposeGL failed");
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void disposeGL() {
+                platform.calls.add("disposeGL");
+                throw disposeGLFailure;
+            }
+        };
+        canvas.context = 42L;
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::disposeCanvas);
+
+        assertSame(disposeGLFailure, failure);
+        assertEquals(3, failure.getSuppressed().length);
+        assertEquals("Failed to clear the current OpenGL context", failure.getSuppressed()[0].getMessage());
+        assertSame(platform.deleteFailure, failure.getSuppressed()[1]);
+        assertSame(platform.disposeFailure, failure.getSuppressed()[2]);
+        assertEquals(Arrays.asList("lock", "makeCurrent:42", "disposeGL", "makeCurrent:0", "unlock",
+                "delete:42", "dispose"), platform.calls);
+        assertEquals(0L, canvas.context);
+    }
+
+    @Test
+    void disposeGLIsInvokedOnlyOncePerContext() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        AtomicInteger callbackCalls = new AtomicInteger();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void disposeGL() {
+                callbackCalls.incrementAndGet();
+            }
+        };
+        canvas.context = 42L;
+
+        canvas.disposeCanvas();
+        canvas.disposeCanvas();
+
+        assertEquals(1, callbackCalls.get());
+        assertEquals(Arrays.asList("lock", "makeCurrent:42", "makeCurrent:0", "unlock", "delete:42",
+                "dispose", "dispose"), platform.calls);
+    }
+
+    @Test
+    void removeNotifyInvokesDisposeGLBeforeDestroyingNativePeer() throws Exception {
+        assumeFalse(GraphicsEnvironment.isHeadless());
+        AtomicBoolean callbackCalled = new AtomicBoolean();
+        AtomicBoolean callbackSawDisplayableCanvas = new AtomicBoolean();
+
+        EventQueue.invokeAndWait(() -> {
+            Frame frame = new Frame();
+            try {
+                RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+                TestCanvas canvas = new TestCanvas(platform) {
+                    @Override
+                    protected void disposeGL() {
+                        callbackCalled.set(true);
+                        callbackSawDisplayableCanvas.set(isDisplayable());
+                    }
+                };
+                frame.add(canvas);
+                frame.pack();
+                assertTrue(canvas.isDisplayable());
+                canvas.context = 42L;
+
+                frame.remove(canvas);
+
+                assertTrue(callbackCalled.get());
+                assertTrue(callbackSawDisplayableCanvas.get());
+                assertFalse(canvas.isDisplayable());
+            } finally {
+                frame.dispose();
+            }
+        });
     }
 
     @Test
@@ -288,7 +448,8 @@ class AWTGLCanvasLifecycleTest {
         assertNull(renderFailure.get(), "Rendering failed");
         assertNull(disposeFailure.get(), "Disposal failed");
         assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "paint:start", "paint:end",
-                "makeCurrent:0", "unlock", "delete:42", "dispose"), platform.calls);
+                "makeCurrent:0", "unlock", "lock", "makeCurrent:42", "makeCurrent:0", "unlock",
+                "delete:42", "dispose"), platform.calls);
     }
 
     @Test
@@ -435,9 +596,11 @@ class AWTGLCanvasLifecycleTest {
         final List<String> calls = Collections.synchronizedList(new ArrayList<>());
         final CountDownLatch deleteCalled = new CountDownLatch(1);
         RuntimeException deleteFailure;
+        RuntimeException disposeFailure;
         RuntimeException framebufferSizeFailure;
         long makeCurrentFailureContext = Long.MIN_VALUE;
         long makeCurrentExceptionContext = Long.MIN_VALUE;
+        long currentContext;
         boolean reportsFramebufferSize = true;
         int framebufferWidth;
         int framebufferHeight;
@@ -464,12 +627,16 @@ class AWTGLCanvasLifecycleTest {
             if (context == makeCurrentExceptionContext) {
                 throw new IllegalStateException("make current failed");
             }
-            return context != makeCurrentFailureContext;
+            if (context == makeCurrentFailureContext) {
+                return false;
+            }
+            currentContext = context;
+            return true;
         }
 
         @Override
         public boolean isCurrent(long context) {
-            return false;
+            return currentContext == context;
         }
 
         @Override
@@ -509,6 +676,9 @@ class AWTGLCanvasLifecycleTest {
         @Override
         public void dispose() {
             calls.add("dispose");
+            if (disposeFailure != null) {
+                throw disposeFailure;
+            }
         }
     }
 }
