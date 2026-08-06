@@ -11,15 +11,13 @@ import static org.lwjgl.opengl.GLXARBCreateContextProfile.*;
 import static org.lwjgl.opengl.GLXARBCreateContextRobustness.*;
 import static org.lwjgl.opengl.GLXARBRobustnessApplicationIsolation.*;
 import static org.lwjgl.opengl.GLXEXTCreateContextESProfile.*;
-import static org.lwjgl.opengl.GLXEXTSwapControl.*;
 
 import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
@@ -62,7 +60,8 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
 		int screen = X11.XDefaultScreen(display);
-		List<String> extensions = Arrays.asList(glXQueryExtensionsString(display, screen).split(" "));
+		Set<String> extensions = GLXSwapInterval.parseExtensions(
+				glXQueryExtensionsString(display, screen));
 		IntBuffer attrib_list = BufferUtils.createIntBuffer(16 * 2);
 		attrib_list.put(GLX_DRAWABLE_TYPE).put(GLX_WINDOW_BIT);
 		attrib_list.put(GLX_RENDER_TYPE).put(GLX_RGBA_BIT);
@@ -83,7 +82,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AWTException("No supported framebuffer configurations found");
 		}
 
-		verifyGLXCapabilities(extensions, attribs);
+		GLXSwapInterval swapInterval = verifyGLXCapabilities(extensions, attribs);
 		IntBuffer gl_attrib_list = bufferGLAttribs(attribs);
 		
 		long share_context = NULL;
@@ -100,18 +99,27 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AWTException("Unable to create GLX context");
 		}
 
-		populateEffectiveGLXAttribs(display, fbConfigs.get(0), effective);
+		boolean initialized = false;
+		try {
+			populateEffectiveGLXAttribs(display, fbConfigs.get(0), effective);
 
-		if (!makeCurrent(context)) {
-			throw new AWTException("Unable to make context current");
+			if (!makeCurrent(context)) {
+				throw new AWTException("Unable to make context current");
+			}
+			// Mesa resolves an implicit GLX drawable while binding it, so configure the
+			// interval only after this context has been made current.
+			if (swapInterval != null) {
+				swapInterval.apply(display, drawable);
+			}
+			populateEffectiveGLAttribs(effective);
+			initialized = true;
+			return context;
+		} finally {
+			makeCurrent(0 /* no context */);
+			if (!initialized) {
+				glXDestroyContext(display, context);
+			}
 		}
-		if (attribs.swapInterval != null) {
-			glXSwapIntervalEXT(display, drawable, attribs.swapInterval);
-		}
-		populateEffectiveGLAttribs(effective);
-		makeCurrent(0 /* no context */);
-
-		return context;
 	}
 
 	public void lock() throws AWTException {
@@ -267,7 +275,8 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		canvas = null;
 	}
 
-	private static void verifyGLXCapabilities(List<String> extensions, GLData data) throws AWTException {
+	private static GLXSwapInterval verifyGLXCapabilities(Set<String> extensions, GLData data)
+			throws AWTException {
 		if (!extensions.contains("GLX_ARB_create_context")) {
 			throw new AWTException("GLX_ARB_create_context is unavailable");
 		}
@@ -283,7 +292,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		if (data.contextResetIsolation && !extensions.contains("GLX_ARB_robustness_application_isolation")) {
 			throw new AWTException("OpenGL robustness requested but GLX_ARB_robustness_application_isolation is unavailable");
 		}
-		LinuxGLDataUtil.validateSwapInterval(data.swapInterval, extensions);
+		return GLXSwapInterval.create(data.swapInterval, extensions);
 	}
 
 	private static IntBuffer bufferGLAttribs(GLData data) throws AWTException {
