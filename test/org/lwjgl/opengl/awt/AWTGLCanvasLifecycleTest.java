@@ -234,6 +234,69 @@ class AWTGLCanvasLifecycleTest {
     }
 
     @Test
+    void contextCreatedByRunInContextIsDisposedWithoutCallingInitGL() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        AtomicBoolean initGLCalled = new AtomicBoolean();
+        AtomicBoolean disposeGLCalled = new AtomicBoolean();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            public void initGL() {
+                initGLCalled.set(true);
+            }
+
+            @Override
+            protected void disposeGL() {
+                assertTrue(platform.isCurrent(42L));
+                disposeGLCalled.set(true);
+                platform.calls.add("disposeGL");
+            }
+        };
+
+        canvas.runInContext(() -> platform.calls.add("work"));
+        assertFalse(initGLCalled.get());
+        assertFalse(canvas.initCalled);
+
+        canvas.disposeCanvas();
+
+        assertTrue(disposeGLCalled.get());
+        assertEquals(Arrays.asList("create", "lock", "makeCurrent:42", "work", "makeCurrent:0", "unlock",
+                "lock", "makeCurrent:42", "disposeGL", "makeCurrent:0", "unlock", "delete:42", "dispose"),
+                platform.calls);
+    }
+
+    @Test
+    void disposeGLPreventsReentrantLifecycleOperationsWithoutRelockingDrawingSurface() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        AtomicInteger callbackCalls = new AtomicInteger();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void disposeGL() {
+                callbackCalls.incrementAndGet();
+
+                disposeCanvas();
+
+                IllegalStateException renderFailure = assertThrows(IllegalStateException.class, this::render);
+                assertEquals("Canvas is being disposed", renderFailure.getMessage());
+                IllegalStateException runFailure = assertThrows(IllegalStateException.class,
+                        () -> runInContext(() -> {}));
+                assertEquals("Canvas is being disposed", runFailure.getMessage());
+                IllegalStateException executeFailure = assertThrows(IllegalStateException.class,
+                        () -> executeInContext(() -> null));
+                assertEquals("Canvas is being disposed", executeFailure.getMessage());
+
+                platform.calls.add("disposeGL");
+            }
+        };
+        canvas.context = 42L;
+
+        canvas.disposeCanvas();
+
+        assertEquals(1, callbackCalls.get());
+        assertEquals(Arrays.asList("lock", "makeCurrent:42", "disposeGL", "makeCurrent:0", "unlock",
+                "delete:42", "dispose"), platform.calls);
+    }
+
+    @Test
     void removeNotifyInvokesDisposeGLBeforeDestroyingNativePeer() throws Exception {
         assumeFalse(GraphicsEnvironment.isHeadless());
         AtomicBoolean callbackCalled = new AtomicBoolean();
@@ -260,6 +323,76 @@ class AWTGLCanvasLifecycleTest {
                 assertTrue(callbackCalled.get());
                 assertTrue(callbackSawDisplayableCanvas.get());
                 assertFalse(canvas.isDisplayable());
+            } finally {
+                frame.dispose();
+            }
+        });
+    }
+
+    @Test
+    void windowDisposeInvokesDisposeGLBeforeDestroyingNativePeer() throws Exception {
+        assumeFalse(GraphicsEnvironment.isHeadless());
+        AtomicBoolean callbackCalled = new AtomicBoolean();
+        AtomicBoolean callbackSawDisplayableCanvas = new AtomicBoolean();
+
+        EventQueue.invokeAndWait(() -> {
+            Frame frame = new Frame();
+            try {
+                RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+                TestCanvas canvas = new TestCanvas(platform) {
+                    @Override
+                    protected void disposeGL() {
+                        callbackCalled.set(true);
+                        callbackSawDisplayableCanvas.set(isDisplayable());
+                    }
+                };
+                frame.add(canvas);
+                frame.pack();
+                assertTrue(canvas.isDisplayable());
+                canvas.context = 42L;
+
+                frame.dispose();
+
+                assertTrue(callbackCalled.get());
+                assertTrue(callbackSawDisplayableCanvas.get());
+                assertFalse(canvas.isDisplayable());
+            } finally {
+                frame.dispose();
+            }
+        });
+    }
+
+    @Test
+    void awtRemovalDisposesOncePerContextAcrossCanvasReAdd() throws Exception {
+        assumeFalse(GraphicsEnvironment.isHeadless());
+        AtomicInteger callbackCalls = new AtomicInteger();
+
+        EventQueue.invokeAndWait(() -> {
+            Frame frame = new Frame();
+            try {
+                RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+                TestCanvas canvas = new TestCanvas(platform) {
+                    @Override
+                    protected void disposeGL() {
+                        assertTrue(isDisplayable());
+                        callbackCalls.incrementAndGet();
+                    }
+                };
+                frame.add(canvas);
+                frame.pack();
+                canvas.context = 42L;
+
+                frame.remove(canvas);
+                assertFalse(canvas.isDisplayable());
+
+                frame.add(canvas);
+                frame.pack();
+                assertTrue(canvas.isDisplayable());
+                canvas.context = 84L;
+
+                frame.remove(canvas);
+                assertFalse(canvas.isDisplayable());
+                assertEquals(2, callbackCalls.get());
             } finally {
                 frame.dispose();
             }
