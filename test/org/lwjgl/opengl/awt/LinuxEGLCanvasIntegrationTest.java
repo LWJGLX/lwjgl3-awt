@@ -75,13 +75,14 @@ class LinuxEGLCanvasIntegrationTest {
     }
 
     @Test
-    void honorsCoreProfileContextAttributes() throws Exception {
+    void selectsAnAtLeastCoreProfileContext() throws Exception {
         assumeEGLIsSelected();
 
         GLData data = new GLData();
         data.majorVersion = 3;
         data.minorVersion = 2;
         data.profile = GLData.Profile.CORE;
+        data.versionPolicy = GLData.VersionPolicy.AT_LEAST;
         data.swapInterval = 0;
 
         AtomicReference<JFrame> frameRef = new AtomicReference<>();
@@ -97,6 +98,7 @@ class LinuxEGLCanvasIntegrationTest {
                 assertTrue(GLUtil.atLeast32(
                         canvas.effective.majorVersion, canvas.effective.minorVersion));
                 assertEquals(GLData.Profile.CORE, canvas.effective.profile);
+                assertEquals(GLData.VersionPolicy.AT_LEAST, canvas.effective.versionPolicy);
                 assertEquals(Integer.valueOf(0), canvas.effective.swapInterval);
             });
         } finally {

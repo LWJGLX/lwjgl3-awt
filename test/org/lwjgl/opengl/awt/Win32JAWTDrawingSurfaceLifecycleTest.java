@@ -48,6 +48,7 @@ class Win32JAWTDrawingSurfaceLifecycleTest {
             data.majorVersion = 3;
             data.minorVersion = 2;
             data.profile = GLData.Profile.CORE;
+            data.versionPolicy = GLData.VersionPolicy.AT_LEAST;
             data.samples = samples;
             data.swapInterval = 0;
 
@@ -92,6 +93,10 @@ class Win32JAWTDrawingSurfaceLifecycleTest {
                     "The created context does not use the requested sample count");
             assertEquals(samples == 0 ? 0 : 1, canvasRef.get().effective.sampleBuffers,
                     "The created context reports an unexpected sample-buffer count");
+            assertTrue(GLUtil.atLeast32(canvasRef.get().effective.majorVersion,
+                    canvasRef.get().effective.minorVersion));
+            assertEquals(GLData.Profile.CORE, canvasRef.get().effective.profile);
+            assertEquals(GLData.VersionPolicy.AT_LEAST, canvasRef.get().effective.versionPolicy);
             int gdiObjectsBefore = getGdiObjectCount();
 
             renderResizeCycles(frameRef.get(), canvasRef.get(), MEASURED_CYCLES);
