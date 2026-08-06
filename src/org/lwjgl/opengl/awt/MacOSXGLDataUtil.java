@@ -61,49 +61,57 @@ final class MacOSXGLDataUtil {
     }
 
     static PixelFormatSelection choosePixelFormat(GLData data, PixelFormatFactory factory) throws AWTException {
-        List<int[]> candidates = createPixelFormatCandidates(data);
-        for (int[] candidate : candidates) {
-            long pixelFormat = factory.create(candidate);
-            if (pixelFormat != 0L) {
-                return new PixelFormatSelection(pixelFormat, candidate);
+        int attempts = 0;
+        for (int profile : profileAttributes(data)) {
+            List<int[]> candidates = createPixelFormatCandidates(data, profile);
+            for (int[] candidate : candidates) {
+                attempts++;
+                long pixelFormat = factory.create(candidate);
+                if (pixelFormat != 0L) {
+                    return new PixelFormatSelection(pixelFormat, candidate);
+                }
             }
         }
         throw new AWTException("No compatible macOS OpenGL pixel format found after "
-                + candidates.size() + " attempts");
+                + attempts + " attempts");
     }
 
     static List<int[]> createPixelFormatCandidates(GLData data) {
+        return createPixelFormatCandidates(data, profileAttribute(data));
+    }
+
+    private static List<int[]> createPixelFormatCandidates(GLData data, int profile) {
         List<int[]> candidates = new ArrayList<>();
         boolean includeSamples = data.samples > 0;
         boolean includeAccumulation = accumulatorSize(data) > 0;
         boolean includeStereo = data.stereo;
         boolean includeFloat = data.pixelFormatFloat;
         candidates.add(createPixelFormatAttributes(data, includeSamples, includeAccumulation,
-                includeStereo, includeFloat, true));
+                includeStereo, includeFloat, true, profile));
 
         // Relax cumulatively from the most to the least exotic attribute. Dropping stereo and floating-point color
         // first preserves commonly supported requests such as multisampling whenever possible.
         if (includeStereo) {
             includeStereo = false;
             candidates.add(createPixelFormatAttributes(data, includeSamples, includeAccumulation,
-                    false, includeFloat, true));
+                    false, includeFloat, true, profile));
         }
         if (includeFloat) {
             includeFloat = false;
             candidates.add(createPixelFormatAttributes(data, includeSamples, includeAccumulation,
-                    includeStereo, false, true));
+                    includeStereo, false, true, profile));
         }
         if (includeAccumulation) {
             includeAccumulation = false;
             candidates.add(createPixelFormatAttributes(data, includeSamples, false,
-                    includeStereo, includeFloat, true));
+                    includeStereo, includeFloat, true, profile));
         }
         if (includeSamples) {
             includeSamples = false;
             candidates.add(createPixelFormatAttributes(data, false, includeAccumulation,
-                    includeStereo, includeFloat, true));
+                    includeStereo, includeFloat, true, profile));
         }
-        candidates.add(createPixelFormatAttributes(data, false, false, false, false, false));
+        candidates.add(createPixelFormatAttributes(data, false, false, false, false, false, profile));
         return candidates;
     }
 
@@ -112,11 +120,12 @@ final class MacOSXGLDataUtil {
                 includeOptional && accumulatorSize(data) > 0,
                 includeOptional && data.stereo,
                 includeOptional && data.pixelFormatFloat,
-                accelerated);
+                accelerated, profileAttribute(data));
     }
 
     private static int[] createPixelFormatAttributes(GLData data, boolean includeSamples,
-            boolean includeAccumulation, boolean includeStereo, boolean includeFloat, boolean accelerated) {
+            boolean includeAccumulation, boolean includeStereo, boolean includeFloat, boolean accelerated,
+            int profile) {
         List<Integer> attributes = new ArrayList<>();
         if (accelerated) {
             attributes.add(NS_OPENGL_PFA_ACCELERATED);
@@ -156,7 +165,7 @@ final class MacOSXGLDataUtil {
             addValue(attributes, NS_OPENGL_PFA_SAMPLES, data.samples);
         }
 
-        addValue(attributes, NS_OPENGL_PFA_OPENGL_PROFILE, profileAttribute(data));
+        addValue(attributes, NS_OPENGL_PFA_OPENGL_PROFILE, profile);
         attributes.add(0);
 
         int[] result = new int[attributes.size()];
@@ -167,13 +176,32 @@ final class MacOSXGLDataUtil {
     }
 
     static int profileAttribute(GLData data) {
+        return profileAttribute(data, data.majorVersion, data.minorVersion);
+    }
+
+    private static List<Integer> profileAttributes(GLData data) {
+        List<Integer> profiles = new ArrayList<>();
+        if (data.versionPolicy == GLData.VersionPolicy.EXACT) {
+            profiles.add(profileAttribute(data));
+            return profiles;
+        }
+        for (GLUtil.ContextVersion version : GLUtil.contextVersionCandidates(data, 4, 1)) {
+            int profile = profileAttribute(data, version.major, version.minor);
+            if (!profiles.contains(profile)) {
+                profiles.add(profile);
+            }
+        }
+        return profiles;
+    }
+
+    private static int profileAttribute(GLData data, int majorVersion, int minorVersion) {
         if (data.profile == GLData.Profile.COMPATIBILITY) {
             return NS_OPENGL_PROFILE_LEGACY;
         }
-        if (data.majorVersion >= 4 || (data.majorVersion == 3 && data.minorVersion > 2)) {
+        if (majorVersion >= 4 || (majorVersion == 3 && minorVersion > 2)) {
             return NS_OPENGL_PROFILE_4_1_CORE;
         }
-        if (data.profile == GLData.Profile.CORE || data.majorVersion >= 3) {
+        if (data.profile == GLData.Profile.CORE || majorVersion >= 3) {
             return NS_OPENGL_PROFILE_3_2_CORE;
         }
         return NS_OPENGL_PROFILE_LEGACY;

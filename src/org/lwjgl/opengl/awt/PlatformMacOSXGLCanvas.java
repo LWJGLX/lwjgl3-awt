@@ -136,6 +136,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                             }
                             this.context = context;
                             configureSwapInterval(context, attribs.swapInterval);
+                            effective.versionPolicy = attribs.versionPolicy;
                             populateEffectiveData(context, effective);
                             this.doubleBuffered = effective.doubleBuffer;
                         } finally {

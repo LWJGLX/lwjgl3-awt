@@ -5,6 +5,7 @@ import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.awt.GLData.API;
 import org.lwjgl.opengl.awt.GLData.Profile;
 import org.lwjgl.opengl.awt.GLData.ReleaseBehavior;
+import org.lwjgl.opengl.awt.GLData.VersionPolicy;
 import org.lwjgl.system.Checks;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -22,6 +23,7 @@ import java.awt.Canvas;
 import java.nio.IntBuffer;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import static org.lwjgl.opengl.ARBMultisample.GL_SAMPLES_ARB;
@@ -237,7 +239,8 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             }
 
             Set<String> wglExtensions = queryWGLExtensions(hDCdummy);
-            boolean legacyContext = !atLeast30(attribs.majorVersion, attribs.minorVersion)
+            boolean legacyContext = attribs.versionPolicy == VersionPolicy.EXACT
+                    && !atLeast30(attribs.majorVersion, attribs.minorVersion)
                     && attribs.samples == 0
                     && !attribs.sRGB
                     && !attribs.pixelFormatFloat
@@ -397,11 +400,54 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             readExtendedPixelFormat(hDC, pixelFormat, attribList, attribListAddr, effective);
         }
 
-        attribList.rewind();
-        if (attribs.api == API.GL && atLeast30(attribs.majorVersion, attribs.minorVersion)
-                || attribs.api == API.GLES && attribs.majorVersion > 0) {
-            attribList.put(WGL_CONTEXT_MAJOR_VERSION_ARB).put(attribs.majorVersion);
-            attribList.put(WGL_CONTEXT_MINOR_VERSION_ARB).put(attribs.minorVersion);
+        List<ContextVersion> candidates = contextVersionCandidates(attribs,
+                attribs.api == API.GLES ? 3 : 4, attribs.api == API.GLES ? 2 : 6);
+        applyPixelFormat(hDC, pixelFormat);
+        long context = 0L;
+        for (ContextVersion version : candidates) {
+            encodeContextAttributes(attribList, attribs, version, wglExtensions);
+            context = callPPPP(hDC,
+                    attribs.shareContext != null ? attribs.shareContext.context : 0L,
+                    attribListAddr, createContextAttribs);
+            if (context != 0L) {
+                break;
+            }
+        }
+        if (context == 0L) {
+            if (attribs.versionPolicy == VersionPolicy.EXACT) {
+                throw new AWTException("Failed to create OpenGL context.");
+            }
+            throw new AWTException("Failed to create a context satisfying "
+                    + describeVersionRequest(attribs) + " after " + candidates.size() + " attempts");
+        }
+
+        boolean success = false;
+        try {
+            if (!wglMakeCurrent(null, hDC, context)) {
+                throw new AWTException("Could not make GL context current");
+            }
+            configureSwapInterval(attribs, wglExtensions);
+            configureSwapGroup(attribs, wglExtensions, bufferAddr, hDC);
+            readEffectiveContext(attribs, effective, wglExtensions, bufferAddr);
+            success = true;
+            return context;
+        } finally {
+            if (!success) {
+                wglMakeCurrent(null, 0L, 0L);
+                wglDeleteContext(null, context);
+            }
+        }
+    }
+
+    private static void encodeContextAttributes(IntBuffer attribList, GLData attribs,
+            ContextVersion version, Set<String> wglExtensions) throws AWTException {
+        attribList.clear();
+        boolean specifyVersion = attribs.versionPolicy != VersionPolicy.EXACT
+                || attribs.api == API.GL && atLeast30(version.major, version.minor)
+                || attribs.api == API.GLES && version.major > 0;
+        if (specifyVersion) {
+            attribList.put(WGL_CONTEXT_MAJOR_VERSION_ARB).put(version.major);
+            attribList.put(WGL_CONTEXT_MINOR_VERSION_ARB).put(version.minor);
         }
         int profile = 0;
         if (attribs.api == API.GL) {
@@ -460,32 +506,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                         .put(WGL_CONTEXT_RELEASE_BEHAVIOR_FLUSH_ARB);
             }
         }
-        attribList.put(0).put(0);
-
-        applyPixelFormat(hDC, pixelFormat);
-        long context = callPPPP(hDC,
-                attribs.shareContext != null ? attribs.shareContext.context : 0L,
-                attribListAddr, createContextAttribs);
-        if (context == 0L) {
-            throw new AWTException("Failed to create OpenGL context.");
-        }
-
-        boolean success = false;
-        try {
-            if (!wglMakeCurrent(null, hDC, context)) {
-                throw new AWTException("Could not make GL context current");
-            }
-            configureSwapInterval(attribs, wglExtensions);
-            configureSwapGroup(attribs, wglExtensions, bufferAddr, hDC);
-            readEffectiveContext(attribs, effective, wglExtensions, bufferAddr);
-            success = true;
-            return context;
-        } finally {
-            if (!success) {
-                wglMakeCurrent(null, 0L, 0L);
-                wglDeleteContext(null, context);
-            }
-        }
+        attribList.put(0).flip();
     }
 
     private static void readExtendedPixelFormat(long hDC, int pixelFormat, IntBuffer attribList,
@@ -567,7 +588,12 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
         long getInteger = GL.getFunctionProvider().getFunctionAddress("glGetIntegerv");
         long getString = GL.getFunctionProvider().getFunctionAddress("glGetString");
         effective.api = attribs.api;
-        if (atLeast30(attribs.majorVersion, attribs.minorVersion)) {
+        effective.versionPolicy = attribs.versionPolicy;
+        APIVersion version = apiParseVersion(
+                memUTF8(Checks.check(callP(GL_VERSION, getString))));
+        effective.majorVersion = version.major;
+        effective.minorVersion = version.minor;
+        if (atLeast30(effective.majorVersion, effective.minorVersion)) {
             callPV(GL_MAJOR_VERSION, bufferAddr, getInteger);
             effective.majorVersion = memGetInt(bufferAddr);
             callPV(GL_MINOR_VERSION, bufferAddr, getInteger);
@@ -577,11 +603,6 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             effective.debug = (effectiveContextFlags & GL_CONTEXT_FLAG_DEBUG_BIT) != 0;
             effective.forwardCompatible = (effectiveContextFlags & GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) != 0;
             effective.robustness = (effectiveContextFlags & GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT_ARB) != 0;
-        } else {
-            APIVersion version = apiParseVersion(
-                    memUTF8(Checks.check(callP(GL_VERSION, getString))));
-            effective.majorVersion = version.major;
-            effective.minorVersion = version.minor;
         }
         if (attribs.api == API.GL && atLeast32(effective.majorVersion, effective.minorVersion)) {
             callPV(GL_CONTEXT_PROFILE_MASK, bufferAddr, getInteger);
