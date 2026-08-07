@@ -68,7 +68,19 @@ public class GLData {
      */
     public int samples;
     /**
-     * The {@link AWTGLCanvas} whose context objects should be shared with the context created using <code>this</code> GLData.
+     * The {@link AWTGLCanvas} whose context should share objects with the context created using this data.
+     *
+     * <p>The referenced canvas's context must already have been created before this canvas creates its context. Backend
+     * support for context sharing may vary.</p>
+     *
+     * <pre>{@code
+     * firstCanvas.render(); // Create the context that will remain alive.
+     *
+     * GLData sharedData = new GLData();
+     * sharedData.shareContext = firstCanvas;
+     * AWTGLCanvas secondCanvas = new MyCanvas(sharedData);
+     * secondCanvas.render(); // Creates a context in the same share group.
+     * }</pre>
      */
     public AWTGLCanvas shareContext;
 
