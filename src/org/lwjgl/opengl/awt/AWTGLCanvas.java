@@ -64,7 +64,7 @@ public abstract class AWTGLCanvas extends Canvas {
         try {
             Throwable failure = null;
             try {
-                // disposeGL() needs the native peer in order to make the context current.
+                // The context-current cleanup hook needs the native peer to still exist.
                 disposeCanvas();
             } catch (RuntimeException | Error e) {
                 failure = e;
@@ -88,7 +88,8 @@ public abstract class AWTGLCanvas extends Canvas {
     }
 
     /**
-     * Invokes {@link #disposeGL()}, deletes the OpenGL context, and releases platform-specific canvas resources.
+     * Invokes the optional {@link #disposeGL()} context-current cleanup hook, deletes the OpenGL context, and releases
+     * platform-specific canvas resources.
      *
      * <p>If rendering is in progress on another thread, this method waits for that operation to finish before deleting
      * the context. Applications remain responsible for stopping any render loop before disposing the canvas. The
@@ -362,7 +363,18 @@ public abstract class AWTGLCanvas extends Canvas {
     public abstract void paintGL();
 
     /**
-     * Will be called before this canvas's OpenGL context is deleted.
+     * Optional context-current cleanup hook called before this canvas's OpenGL context is deleted.
+     *
+     * <p>Destroying the last context in an OpenGL share group automatically reclaims the group's OpenGL resources.
+     * Applications therefore do not need to override this method merely to delete ordinary OpenGL objects owned by a
+     * context that is the last member of its share group.</p>
+     *
+     * <p>Destroying one context has no effect on shared objects while another context in the share group remains alive.
+     * If this canvas belongs to a share group created through {@link GLData#shareContext}, subclasses can override this
+     * method to delete buffers, programs and shaders, renderbuffers, samplers, sync objects, or textures logically owned
+     * by this canvas. Normal OpenGL deletion semantics still apply, so the implementation may retain an object's storage
+     * while another context continues to reference it. This hook can also perform other cleanup that requires a current
+     * context.</p>
      *
      * <p>The drawing surface is locked and the context is current while this callback runs. It is invoked at most once
      * for each created context, including when {@link #initGL()} was never called or did not complete. It is not invoked
