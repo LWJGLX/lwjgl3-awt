@@ -81,7 +81,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
                     // if the canvas, or a parent component is hidden/shown, we must update the hidden state of the layer
                     if (view != 0L && (e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) > 0) {
                         long layer = invokePPP(view, sel_getUid("layer"), objc_msgSend);
-                        setLayerHiddenOnMainThread(layer, !e.getChanged().isShowing());
+                        setLayerHiddenOnMainThread(layer, !canvas.isShowing());
                     }
                 });
                 hierarchyListenerAdded = true;
