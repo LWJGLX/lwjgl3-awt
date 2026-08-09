@@ -320,7 +320,10 @@ public abstract class AWTGLCanvas extends Canvas {
     @Override
     public Graphics getGraphics() {
     	Graphics graphics = super.getGraphics();
-    	return (graphics instanceof Graphics2D) ? 
+    	if (graphics == null) {
+    		return null;
+    	}
+    	return (graphics instanceof Graphics2D) ?
     			new NonClearGraphics2D((Graphics2D) graphics) : new NonClearGraphics(graphics);
     }
 
