@@ -36,6 +36,7 @@ import org.lwjgl.system.CallbackI;
 import org.lwjgl.system.Checks;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
@@ -60,7 +61,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			CONTEXT_CREATION_ERROR_HANDLER.address();
 	public static final JAWT awt;
 	static {
-		awt = JAWT.calloc();
+		awt = JAWT.create(MemoryUtil.getAllocator().calloc(1, JAWT.SIZEOF)); // untracked allocation
 		awt.version(JAWT_VERSION_1_4);
 		if (!JAWT_GetAWT(awt))
 			throw new AssertionError("GetAWT failed");
