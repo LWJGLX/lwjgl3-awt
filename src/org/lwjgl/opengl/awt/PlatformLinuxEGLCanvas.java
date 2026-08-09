@@ -16,6 +16,7 @@ import org.lwjgl.system.APIUtil.APIVersion;
 import org.lwjgl.system.Checks;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jawt.JAWT;
 import org.lwjgl.system.jawt.JAWTDrawingSurface;
 import org.lwjgl.system.jawt.JAWTDrawingSurfaceInfo;
@@ -60,7 +61,7 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
     private long eglContext;
 
     private static JAWT createAWT() {
-        JAWT awt = JAWT.calloc();
+        JAWT awt = JAWT.create(MemoryUtil.getAllocator().calloc(1, JAWT.SIZEOF)); // untracked allocation
         awt.version(JAWT_VERSION_1_4);
         if (!JAWT_GetAWT(awt)) {
             throw new AssertionError("GetAWT failed");

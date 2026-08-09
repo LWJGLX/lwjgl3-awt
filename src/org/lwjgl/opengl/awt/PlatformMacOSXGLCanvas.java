@@ -45,7 +45,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
     private static final long NSOpenGLPixelFormat;
 
     static {
-        awt = JAWT.calloc();
+        awt = JAWT.create(MemoryUtil.getAllocator().calloc(1, JAWT.SIZEOF)); // untracked allocation
         awt.version(JAWT_VERSION_1_7);
         if (!JAWT_GetAWT(awt))
             throw new AssertionError("GetAWT failed");
