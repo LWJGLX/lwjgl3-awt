@@ -175,6 +175,7 @@ class MacOSXGLCanvasLifecycleTest {
         data.majorVersion = 3;
         data.minorVersion = 2;
         data.profile = GLData.Profile.CORE;
+        data.versionPolicy = GLData.VersionPolicy.AT_LEAST;
         data.doubleBuffer = true;
         data.swapInterval = 0;
         data.stencilSize = 8;
@@ -186,6 +187,7 @@ class MacOSXGLCanvasLifecycleTest {
             assertEquals(0, canvas.configuredSwapInterval);
             assertEquals(Integer.valueOf(0), canvas.effective.swapInterval);
             assertEquals(GLData.API.GL, canvas.effective.api);
+            assertEquals(GLData.VersionPolicy.AT_LEAST, canvas.effective.versionPolicy);
             assertEquals(GLData.Profile.CORE, canvas.effective.profile);
             assertEquals(canvas.actualMajorVersion, canvas.effective.majorVersion);
             assertEquals(canvas.actualMinorVersion, canvas.effective.minorVersion);

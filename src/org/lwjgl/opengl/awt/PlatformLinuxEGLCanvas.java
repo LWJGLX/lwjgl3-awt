@@ -25,6 +25,7 @@ import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.IntBuffer;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.lwjgl.egl.EGL10.*;
@@ -111,14 +112,40 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
 
         try {
             validateCapabilities(attribs, displayRef.capabilities);
-            long config = chooseConfig(visualID, attribs);
             bindClientAPI(attribs.api);
 
             long shareContext = getShareContext(attribs);
-            eglContext = eglCreateContext(eglDisplay, config, shareContext,
-                    contextAttributes(attribs, displayRef.capabilities));
+            List<GLUtil.ContextVersion> candidates = GLUtil.contextVersionCandidates(attribs,
+                    attribs.api == GLData.API.GLES ? 3 : 4,
+                    attribs.api == GLData.API.GLES ? 2 : 6);
+            long config = 0L;
+            int lastError = EGL_SUCCESS;
+            for (GLUtil.ContextVersion version : candidates) {
+                long candidateConfig = chooseConfig(visualID, attribs, version);
+                if (candidateConfig == 0L) {
+                    if (attribs.versionPolicy == GLData.VersionPolicy.EXACT) {
+                        throw new AWTException("No EGL framebuffer configuration matches the AWT window visual");
+                    }
+                    continue;
+                }
+                eglContext = eglCreateContext(eglDisplay, candidateConfig, shareContext,
+                        contextAttributes(attribs, displayRef.capabilities, version));
+                if (eglContext != EGL_NO_CONTEXT) {
+                    config = candidateConfig;
+                    break;
+                }
+                lastError = eglGetError();
+                if (attribs.versionPolicy == GLData.VersionPolicy.EXACT) {
+                    throw eglFailure("Failed to create EGL context", lastError);
+                }
+            }
             if (eglContext == EGL_NO_CONTEXT) {
-                throw eglFailure("Failed to create EGL context");
+                String message = "Failed to create an EGL context satisfying "
+                        + GLUtil.describeVersionRequest(attribs) + " after " + candidates.size() + " attempts";
+                if (lastError != EGL_SUCCESS) {
+                    throw eglFailure(message, lastError);
+                }
+                throw new AWTException(message);
             }
 
             eglSurface = createWindowSurface(config, drawable, attribs);
@@ -177,6 +204,9 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
         }
 
         boolean createContext = capabilities.EGL15 || capabilities.EGL_KHR_create_context;
+        if (data.versionPolicy != GLData.VersionPolicy.EXACT && !createContext) {
+            throw new AWTException("Context version policies require EGL_KHR_create_context");
+        }
         if (data.api == GLData.API.GL && data.majorVersion > 0 && !createContext) {
             throw new AWTException("Versioned desktop OpenGL contexts require EGL_KHR_create_context");
         }
@@ -197,10 +227,10 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
         }
     }
 
-    private long chooseConfig(long visualID, GLData data) throws AWTException {
+    private long chooseConfig(long visualID, GLData data, GLUtil.ContextVersion version) throws AWTException {
         IntBuffer attributes = BufferUtils.createIntBuffer(40);
         attributes.put(EGL_SURFACE_TYPE).put(EGL_WINDOW_BIT);
-        attributes.put(EGL_RENDERABLE_TYPE).put(renderableType(data));
+        attributes.put(EGL_RENDERABLE_TYPE).put(renderableType(data, version));
         attributes.put(EGL_NATIVE_VISUAL_ID).put((int) visualID);
         attributes.put(EGL_RED_SIZE).put(data.redSize);
         attributes.put(EGL_GREEN_SIZE).put(data.greenSize);
@@ -221,16 +251,19 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
             throw eglFailure("Failed to choose EGL framebuffer configuration");
         }
         if (count.get(0) == 0) {
-            throw new AWTException("No EGL framebuffer configuration matches the AWT window visual");
+            return 0L;
         }
         return configs.get(0);
     }
 
-    private static int renderableType(GLData data) {
+    private static int renderableType(GLData data, GLUtil.ContextVersion version) {
         if (data.api == GLData.API.GL) {
             return EGL_OPENGL_BIT;
         }
-        return data.majorVersion >= 2 ? EGL_OPENGL_ES2_BIT : EGL_OPENGL_ES_BIT;
+        if (version.major >= 3) {
+            return EGL_OPENGL_ES3_BIT_KHR;
+        }
+        return version.major >= 2 ? EGL_OPENGL_ES2_BIT : EGL_OPENGL_ES_BIT;
     }
 
     private static void bindClientAPI(GLData.API api) throws AWTException {
@@ -257,14 +290,15 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
         return data.shareContext.context;
     }
 
-    private static IntBuffer contextAttributes(GLData data, EGLCapabilities capabilities) {
+    private static IntBuffer contextAttributes(GLData data, EGLCapabilities capabilities,
+            GLUtil.ContextVersion version) {
         IntBuffer attributes = BufferUtils.createIntBuffer(32);
         boolean createContext = capabilities.EGL15 || capabilities.EGL_KHR_create_context;
 
         if (createContext) {
-            if (data.majorVersion > 0) {
-                attributes.put(EGL_CONTEXT_MAJOR_VERSION_KHR).put(data.majorVersion);
-                attributes.put(EGL_CONTEXT_MINOR_VERSION_KHR).put(data.minorVersion);
+            if (version.major > 0) {
+                attributes.put(EGL_CONTEXT_MAJOR_VERSION_KHR).put(version.major);
+                attributes.put(EGL_CONTEXT_MINOR_VERSION_KHR).put(version.minor);
             }
 
             int flags = 0;
@@ -292,8 +326,8 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
                                 : EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT_KHR);
             }
         } else {
-            if (data.api == GLData.API.GLES && data.majorVersion > 0) {
-                attributes.put(EGL_CONTEXT_CLIENT_VERSION).put(data.majorVersion);
+            if (data.api == GLData.API.GLES && version.major > 0) {
+                attributes.put(EGL_CONTEXT_CLIENT_VERSION).put(version.major);
             }
             if (data.robustness) {
                 attributes.put(EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT).put(EGL_TRUE);
@@ -394,6 +428,7 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
         APIVersion version = APIUtil.apiParseVersion(getString(GL11.GL_VERSION, glGetString));
 
         effective.api = requested.api;
+        effective.versionPolicy = requested.versionPolicy;
         effective.majorVersion = version.major;
         effective.minorVersion = version.minor;
 
@@ -619,7 +654,10 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
     }
 
     private static AWTException eglFailure(String message) {
-        int error = eglGetError();
+        return eglFailure(message, eglGetError());
+    }
+
+    private static AWTException eglFailure(String message, int error) {
         return new AWTException(message + ": " + eglErrorName(error)
                 + " (0x" + Integer.toHexString(error).toUpperCase() + ")");
     }

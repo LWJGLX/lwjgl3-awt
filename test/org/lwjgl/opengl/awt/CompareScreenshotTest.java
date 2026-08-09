@@ -44,15 +44,20 @@ import static org.lwjgl.opengl.GL11.GL_QUADS;
 import static org.lwjgl.opengl.GL11.GL_READ_BUFFER;
 import static org.lwjgl.opengl.GL11.GL_RGBA;
 import static org.lwjgl.opengl.GL11.GL_RGBA8;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
 import static org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE;
 import static org.lwjgl.opengl.GL11.glBegin;
+import static org.lwjgl.opengl.GL11.glBindTexture;
 import static org.lwjgl.opengl.GL11.glClear;
 import static org.lwjgl.opengl.GL11.glClearColor;
 import static org.lwjgl.opengl.GL11.glColor3f;
+import static org.lwjgl.opengl.GL11.glDeleteTextures;
 import static org.lwjgl.opengl.GL11.glDrawBuffer;
 import static org.lwjgl.opengl.GL11.glEnd;
 import static org.lwjgl.opengl.GL11.glFinish;
+import static org.lwjgl.opengl.GL11.glGenTextures;
 import static org.lwjgl.opengl.GL11.glGetInteger;
+import static org.lwjgl.opengl.GL11.glIsTexture;
 import static org.lwjgl.opengl.GL11.glPixelStorei;
 import static org.lwjgl.opengl.GL11.glReadBuffer;
 import static org.lwjgl.opengl.GL11.glReadPixels;
@@ -478,6 +483,7 @@ public class CompareScreenshotTest {
     private static class DemoCanvas extends AWTGLCanvas {
         private boolean captureRequested;
         private BufferedImage framebufferImage;
+        private int texture;
 
         public DemoCanvas(GLData data) {
             super(data);
@@ -505,6 +511,9 @@ public class CompareScreenshotTest {
             System.out.println("OpenGL version: " + effective.majorVersion + "." + effective.minorVersion + " (Profile: " + effective.profile + ")");
             createCapabilities();
             glClearColor(0.3f, 0.4f, 0.5f, 1);
+            texture = glGenTextures();
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glBindTexture(GL_TEXTURE_2D, 0);
         }
 
         public void paintGL() {
@@ -515,6 +524,15 @@ public class CompareScreenshotTest {
                 framebufferImage = captureOffscreen(getWidth(), getHeight());
             }
             swapBuffers();
+        }
+
+        @Override
+        protected void disposeGL() {
+            Assertions.assertTrue(platformCanvas.isCurrent(context));
+            Assertions.assertTrue(glIsTexture(texture));
+            glDeleteTextures(texture);
+            Assertions.assertFalse(glIsTexture(texture));
+            texture = 0;
         }
 
         private void drawScene(int w, int h) {

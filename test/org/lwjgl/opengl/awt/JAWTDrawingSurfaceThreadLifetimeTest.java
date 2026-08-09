@@ -12,10 +12,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class JAWTDrawingSurfaceThreadLifetimeTest {
-    // Repeating the complete peer and context teardown catches resource leaks that a one-shot smoke test misses.
+    // Repeating the complete peer and context teardown catches native lifecycle failures that a one-shot smoke misses.
     private static final int LIFECYCLE_CYCLES = 10;
 
     @Test
@@ -29,17 +30,7 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
         AtomicReference<Lifecycle> lifecycleRef = new AtomicReference<>();
 
         SwingUtilities.invokeAndWait(() -> {
-            AWTGLCanvas canvas = new AWTGLCanvas(new GLData()) {
-                @Override
-                public void initGL() {
-                    GL.createCapabilities();
-                }
-
-                @Override
-                public void paintGL() {
-                    swapBuffers();
-                }
-            };
+            LifecycleCanvas canvas = new LifecycleCanvas(cycle);
             canvas.setPreferredSize(new Dimension(320, 240));
 
             JFrame frame = new JFrame("dispose-after-render-thread-exits-" + cycle);
@@ -58,6 +49,8 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
                 lifecycle.canvas.render();
             } catch (Throwable t) {
                 renderFailure.set(t);
+            } finally {
+                GL.setCapabilities(null);
             }
         }, "short-lived-renderer-" + cycle);
         renderer.setDaemon(true);
@@ -92,6 +85,8 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
                         "OpenGL context was not cleared in cycle " + cycle);
                 assertFalse(lifecycle.canvas.initCalled,
                         "Canvas remained initialized after removal in cycle " + cycle);
+                assertTrue(lifecycle.canvas.disposeGLCalled,
+                        "disposeGL was not called in cycle " + cycle);
             });
         } catch (Throwable cleanupFailure) {
             failure = unwrapInvocationFailure(cleanupFailure);
@@ -124,11 +119,37 @@ class JAWTDrawingSurfaceThreadLifetimeTest {
 
     private static class Lifecycle {
         final JFrame frame;
-        final AWTGLCanvas canvas;
+        final LifecycleCanvas canvas;
 
-        Lifecycle(JFrame frame, AWTGLCanvas canvas) {
+        Lifecycle(JFrame frame, LifecycleCanvas canvas) {
             this.frame = frame;
             this.canvas = canvas;
+        }
+    }
+
+    private static final class LifecycleCanvas extends AWTGLCanvas {
+        private final int cycle;
+        private boolean disposeGLCalled;
+
+        LifecycleCanvas(int cycle) {
+            this.cycle = cycle;
+        }
+
+        @Override
+        public void initGL() {
+            GL.createCapabilities();
+        }
+
+        @Override
+        public void paintGL() {
+            swapBuffers();
+        }
+
+        @Override
+        protected void disposeGL() {
+            assertTrue(platformCanvas.isCurrent(context),
+                    "OpenGL context was not current during disposal in cycle " + cycle);
+            disposeGLCalled = true;
         }
     }
 }

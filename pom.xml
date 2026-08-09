@@ -236,6 +236,7 @@
 		<resources>
 			<resource>
 				<directory>res</directory>
+				<filtering>true</filtering>
 			</resource>
 			<resource>
 				<directory>native/macosx</directory>
@@ -286,6 +287,9 @@
 			<plugin>
 				<artifactId>maven-resources-plugin</artifactId>
 				<version>${maven-resources-plugin.version}</version>
+				<configuration>
+					<propertiesEncoding>${project.build.sourceEncoding}</propertiesEncoding>
+				</configuration>
 				<executions>
 					<execution>
 						<id>copy-resources</id>
@@ -346,6 +350,8 @@
 						<manifestEntries>
 							<!-- Add Git commit hash -->
 							<Implementation-Build>${buildNumber}</Implementation-Build>
+							<!-- Record the LWJGL ABI used to compile this artifact. -->
+							<LWJGL-Version>${lwjgl.version}</LWJGL-Version>
 						</manifestEntries>
 					</archive>
 				</configuration>

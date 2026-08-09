@@ -16,6 +16,7 @@ import java.awt.AWTException;
 import java.awt.Canvas;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -30,6 +31,8 @@ import org.lwjgl.opengl.GL32;
 import org.lwjgl.opengl.GL43;
 import org.lwjgl.system.APIUtil.APIVersion;
 import org.lwjgl.system.APIUtil;
+import org.lwjgl.system.Callback;
+import org.lwjgl.system.CallbackI;
 import org.lwjgl.system.Checks;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
@@ -45,6 +48,16 @@ import static org.lwjgl.system.Pointer.POINTER_SIZE;
 
 public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	private static final long X_GET_GEOMETRY = X11.getLibrary().getFunctionAddress("XGetGeometry");
+	private static final long X_SET_ERROR_HANDLER = X11.getLibrary().getFunctionAddress("XSetErrorHandler");
+	private static final long X_SYNC = X11.getLibrary().getFunctionAddress("XSync");
+	private static final Object X_ERROR_HANDLER_LOCK = new Object();
+	private static volatile boolean contextCreationXError;
+	private static final XErrorHandlerI CONTEXT_CREATION_ERROR_HANDLER = (ignoredDisplay, ignoredEvent) -> {
+		contextCreationXError = true;
+		return 0;
+	};
+	private static final long CONTEXT_CREATION_ERROR_HANDLER_ADDRESS =
+			CONTEXT_CREATION_ERROR_HANDLER.address();
 	public static final JAWT awt;
 	static {
 		awt = JAWT.calloc();
@@ -59,6 +72,9 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	private Canvas canvas;
 
 	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
+		if (attribs.versionPolicy != GLData.VersionPolicy.EXACT) {
+			GLUtil.validateVersionAttributes(attribs);
+		}
 		int screen = X11.XDefaultScreen(display);
 		Set<String> extensions = GLXSwapInterval.parseExtensions(
 				glXQueryExtensionsString(display, screen));
@@ -83,8 +99,10 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		}
 
 		GLXSwapInterval swapInterval = verifyGLXCapabilities(extensions, attribs);
-		IntBuffer gl_attrib_list = bufferGLAttribs(attribs);
-		
+		List<GLUtil.ContextVersion> candidates = GLUtil.contextVersionCandidates(attribs,
+				attribs.api == GLData.API.GLES ? 3 : 4,
+				attribs.api == GLData.API.GLES ? 2 : 6);
+
 		long share_context = NULL;
 		if(Objects.nonNull(attribs.shareContext)) {
 			if(attribs.shareContext.context == NULL){
@@ -94,9 +112,20 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			share_context = attribs.shareContext.context;
 		}
 		
-		long context = glXCreateContextAttribsARB(display, fbConfigs.get(0), share_context, true, gl_attrib_list);
+		long context = 0L;
+		for (GLUtil.ContextVersion version : candidates) {
+			context = tryCreateContext(fbConfigs.get(0), share_context,
+					bufferGLAttribs(attribs, version));
+			if (context != 0L) {
+				break;
+			}
+		}
 		if (context == 0) {
-			throw new AWTException("Unable to create GLX context");
+			if (attribs.versionPolicy == GLData.VersionPolicy.EXACT) {
+				throw new AWTException("Unable to create GLX context");
+			}
+			throw new AWTException("Unable to create a GLX context satisfying "
+					+ GLUtil.describeVersionRequest(attribs) + " after " + candidates.size() + " attempts");
 		}
 
 		boolean initialized = false;
@@ -111,6 +140,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			if (swapInterval != null) {
 				swapInterval.apply(display, drawable);
 			}
+			effective.versionPolicy = attribs.versionPolicy;
 			populateEffectiveGLAttribs(effective);
 			initialized = true;
 			return context;
@@ -119,6 +149,31 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			if (!initialized) {
 				glXDestroyContext(display, context);
 			}
+		}
+	}
+
+	private long tryCreateContext(long fbConfig, long shareContext, IntBuffer attributes) {
+		synchronized (X_ERROR_HANDLER_LOCK) {
+			// Context creation failures are reported as X errors by GLX. Flush older errors before temporarily replacing
+			// AWT's process-wide handler, then synchronize again while our handler is installed.
+			JNI.callPI(display, 0, X_SYNC);
+			contextCreationXError = false;
+			long previousErrorHandler = JNI.callPP(CONTEXT_CREATION_ERROR_HANDLER_ADDRESS, X_SET_ERROR_HANDLER);
+			long context;
+			try {
+				context = glXCreateContextAttribsARB(
+						display, fbConfig, shareContext, true, attributes);
+				JNI.callPI(display, 0, X_SYNC);
+			} finally {
+				JNI.callPP(previousErrorHandler, X_SET_ERROR_HANDLER);
+			}
+			if (contextCreationXError) {
+				if (context != 0L) {
+					glXDestroyContext(display, context);
+				}
+				return 0L;
+			}
+			return context;
 		}
 	}
 
@@ -295,16 +350,16 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		return GLXSwapInterval.create(data.swapInterval, extensions);
 	}
 
-	private static IntBuffer bufferGLAttribs(GLData data) throws AWTException {
+	private static IntBuffer bufferGLAttribs(GLData data, GLUtil.ContextVersion version) throws AWTException {
 		IntBuffer gl_attrib_list = BufferUtils.createIntBuffer(16 * 2);
 
 		// Set the render type and version
 		gl_attrib_list.put(GLX_RENDER_TYPE).put(GLX_RGBA_TYPE);
 
-		if (data.majorVersion > 0) {
+		if (version.major > 0) {
 			gl_attrib_list
-				.put(GLX_CONTEXT_MAJOR_VERSION_ARB).put(data.majorVersion)
-				.put(GLX_CONTEXT_MINOR_VERSION_ARB).put(data.minorVersion);
+				.put(GLX_CONTEXT_MAJOR_VERSION_ARB).put(version.major)
+				.put(GLX_CONTEXT_MINOR_VERSION_ARB).put(version.minor);
 		}
 
 		// Set the profile based on GLData.api and GLData.profile
@@ -442,5 +497,29 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 	private static String getString(int pname, long function) {
 		return memUTF8(Checks.check(JNI.callP(pname, function)));
+	}
+
+	@FunctionalInterface
+	private interface XErrorHandlerI extends CallbackI {
+		Callback.Descriptor DESCRIPTOR = new Callback.Descriptor(
+				XErrorHandlerI.class,
+				java.lang.invoke.MethodHandles.lookup(),
+				APIUtil.apiCreateCIF(FFI_DEFAULT_ABI, ffi_type_sint32,
+						ffi_type_pointer, ffi_type_pointer));
+
+		@Override
+		default Callback.Descriptor getDescriptor() {
+			return DESCRIPTOR;
+		}
+
+		@Override
+		default void callback(long returnValue, long arguments) {
+			int result = invoke(
+					memGetAddress(arguments),
+					memGetAddress(arguments + POINTER_SIZE));
+			memPutInt(returnValue, result);
+		}
+
+		int invoke(long display, long event);
 	}
 }

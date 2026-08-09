@@ -11,12 +11,59 @@ import javax.swing.SwingUtilities;
 import java.awt.Dimension;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @EnabledOnOs(OS.LINUX)
 class LinuxGLXCanvasIntegrationTest {
+    @Test
+    void selectsAnAtLeastCoreProfileContext() throws Exception {
+        assumeGLXIsSelected();
+
+        GLData data = new GLData();
+        data.majorVersion = 3;
+        data.minorVersion = 2;
+        data.profile = GLData.Profile.CORE;
+        data.versionPolicy = GLData.VersionPolicy.AT_LEAST;
+
+        AtomicReference<JFrame> frameRef = new AtomicReference<>();
+        AtomicReference<TestCanvas> canvasRef = new AtomicReference<>();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                TestCanvas canvas = new TestCanvas(data);
+                canvas.setPreferredSize(new Dimension(320, 240));
+
+                JFrame frame = new JFrame("Linux GLX context version policy test");
+                frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+                frame.getContentPane().add(canvas);
+                frame.pack();
+                frame.setVisible(true);
+                frameRef.set(frame);
+                canvasRef.set(canvas);
+            });
+
+            SwingUtilities.invokeAndWait(() -> {
+                TestCanvas canvas = canvasRef.get();
+                canvas.render();
+                assertTrue(canvas.platformCanvas instanceof PlatformLinuxGLCanvas);
+                assertTrue(GLUtil.atLeast32(
+                        canvas.effective.majorVersion, canvas.effective.minorVersion));
+                assertEquals(GLData.Profile.CORE, canvas.effective.profile);
+                assertEquals(GLData.VersionPolicy.AT_LEAST, canvas.effective.versionPolicy);
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(() -> {
+                GL.setCapabilities(null);
+                JFrame frame = frameRef.get();
+                if (frame != null) {
+                    frame.dispose();
+                }
+            });
+        }
+    }
+
     @Test
     void honorsMultisampleFramebufferAttributes() throws Exception {
         assumeGLXIsSelected();

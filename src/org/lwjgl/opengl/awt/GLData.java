@@ -68,7 +68,19 @@ public class GLData {
      */
     public int samples;
     /**
-     * The {@link AWTGLCanvas} whose context objects should be shared with the context created using <code>this</code> GLData.
+     * The {@link AWTGLCanvas} whose context should share objects with the context created using this data.
+     *
+     * <p>The referenced canvas's context must already have been created before this canvas creates its context. Backend
+     * support for context sharing may vary.</p>
+     *
+     * <pre>{@code
+     * firstCanvas.render(); // Create the context that will remain alive.
+     *
+     * GLData sharedData = new GLData();
+     * sharedData.shareContext = firstCanvas;
+     * AWTGLCanvas secondCanvas = new MyCanvas(sharedData);
+     * secondCanvas.render(); // Creates a context in the same share group.
+     * }</pre>
      */
     public AWTGLCanvas shareContext;
 
@@ -84,24 +96,45 @@ public class GLData {
         GL, GLES
 	}
 
+    /**
+     * Controls how {@link #majorVersion} and {@link #minorVersion} are used when creating a context.
+     */
+    public enum VersionPolicy {
+        /** Request the configured version once, preserving the traditional behavior. */
+        EXACT,
+        /** Try supported, profile-compatible versions from the platform maximum down to the configured minimum. */
+        AT_LEAST,
+        /** Try supported, profile-compatible versions from the platform maximum down, ignoring the configured version. */
+        HIGHEST
+    }
+
     public enum ReleaseBehavior {
         NONE, FLUSH
 	}
 
     /**
-     * The major GL context version to use. It defaults to 0 for "not specified".
+     * The major GL context version to use. It defaults to 0 for "not specified". With
+     * {@link VersionPolicy#AT_LEAST}, this is the minimum acceptable major version.
      */
     public int majorVersion;
     /**
-     * The minor GL context version to use. If {@link #majorVersion} is 0 this field is unused.
+     * The minor GL context version to use. If {@link #majorVersion} is 0 this field is unused. With
+     * {@link VersionPolicy#AT_LEAST}, this is the minimum acceptable minor version.
      */
     public int minorVersion;
     /**
-     * Whether a forward-compatible context should be created. This has only an effect when ({@link #majorVersion}.{@link #minorVersion}) is at least 3.2.
+     * The policy used to select a GL context version. It defaults to {@link VersionPolicy#EXACT}, which preserves
+     * the traditional single-request behavior. {@link VersionPolicy#HIGHEST} ignores the configured version.
+     */
+    public VersionPolicy versionPolicy = VersionPolicy.EXACT;
+    /**
+     * Whether a forward-compatible context should be created. This is only valid for OpenGL 3.0 and later. With
+     * {@link VersionPolicy#HIGHEST}, versions below 3.0 are not considered.
      */
     public boolean forwardCompatible;
     /**
-     * The profile to use. This is only valid when ({@link #majorVersion}.{@link #minorVersion}) is at least 3.0.
+     * The profile to use. This is only valid for desktop OpenGL 3.2 and later. With
+     * {@link VersionPolicy#HIGHEST}, versions below 3.2 are not considered.
      */
     public Profile profile;
     /**

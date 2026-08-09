@@ -50,7 +50,7 @@ Full code samples:
 
 ### OpenGL
 
-In order to create an OpenGL 3.3 core profile context with 4 sample MSAA, use:
+In order to create the highest available OpenGL core profile context that is at least 3.3, with 4 sample MSAA, use:
 
 ```Java
 JFrame frame = new JFrame("AWT test");
@@ -60,6 +60,7 @@ GLData data = new GLData();
 data.majorVersion = 3;
 data.minorVersion = 3;
 data.profile = GLData.Profile.CORE;
+data.versionPolicy = GLData.VersionPolicy.AT_LEAST;
 data.samples = 4;
 frame.add(new AWTGLCanvas(data) {
   public void initGL() {
@@ -68,6 +69,11 @@ frame.add(new AWTGLCanvas(data) {
   }
 });
 ```
+
+`EXACT` is the default version policy and preserves the traditional single-version request. `HIGHEST` ignores the
+configured version fields and requests the highest profile-compatible version without setting a minimum. The version
+actually selected by the platform is available through the canvas's `effective.majorVersion` and
+`effective.minorVersion` fields.
 
 ### Vulkan
 

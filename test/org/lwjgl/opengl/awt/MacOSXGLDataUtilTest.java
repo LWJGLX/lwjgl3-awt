@@ -24,6 +24,7 @@ import static org.lwjgl.opengl.awt.MacOSXGLDataUtil.NS_OPENGL_PFA_SAMPLE_BUFFERS
 import static org.lwjgl.opengl.awt.MacOSXGLDataUtil.NS_OPENGL_PFA_SAMPLES;
 import static org.lwjgl.opengl.awt.MacOSXGLDataUtil.NS_OPENGL_PFA_STENCIL_SIZE;
 import static org.lwjgl.opengl.awt.MacOSXGLDataUtil.NS_OPENGL_PFA_STEREO;
+import static org.lwjgl.opengl.awt.MacOSXGLDataUtil.NS_OPENGL_PROFILE_3_2_CORE;
 import static org.lwjgl.opengl.awt.MacOSXGLDataUtil.NS_OPENGL_PROFILE_4_1_CORE;
 
 class MacOSXGLDataUtilTest {
@@ -118,6 +119,28 @@ class MacOSXGLDataUtilTest {
         data.profile = GLData.Profile.CORE;
 
         assertEquals(NS_OPENGL_PROFILE_4_1_CORE, MacOSXGLDataUtil.profileAttribute(data));
+    }
+
+    @Test
+    void atLeastFallsBackFromTheHighestMacOSCoreProfile() throws Exception {
+        GLData data = new GLData();
+        data.majorVersion = 3;
+        data.minorVersion = 2;
+        data.profile = GLData.Profile.CORE;
+        data.versionPolicy = GLData.VersionPolicy.AT_LEAST;
+        List<int[]> attempts = new ArrayList<>();
+
+        MacOSXGLDataUtil.PixelFormatSelection selection = MacOSXGLDataUtil.choosePixelFormat(data, attributes -> {
+            attempts.add(attributes);
+            return containsPair(attributes, NS_OPENGL_PFA_OPENGL_PROFILE, NS_OPENGL_PROFILE_3_2_CORE)
+                    ? 42L : 0L;
+        });
+
+        assertEquals(42L, selection.pixelFormat);
+        assertEquals(3, attempts.size());
+        assertTrue(containsPair(attempts.get(0), NS_OPENGL_PFA_OPENGL_PROFILE, NS_OPENGL_PROFILE_4_1_CORE));
+        assertTrue(containsPair(attempts.get(1), NS_OPENGL_PFA_OPENGL_PROFILE, NS_OPENGL_PROFILE_4_1_CORE));
+        assertTrue(containsPair(attempts.get(2), NS_OPENGL_PFA_OPENGL_PROFILE, NS_OPENGL_PROFILE_3_2_CORE));
     }
 
     @Test

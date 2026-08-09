@@ -89,8 +89,8 @@ public class AWTThreadTest {
                     canvas.render();
                     try {
                         if (signalTerminate.tryAcquire(10, TimeUnit.MILLISECONDS)) {
-                            GL.setCapabilities(null);
                             canvas.doDisposeCanvas();
+                            GL.setCapabilities(null);
                             signalTerminated.release();
                             return;
                         }
