@@ -568,8 +568,11 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
                     "Negative swap interval requested but WGL_EXT_swap_control_tear is unavailable");
         }
         long swapInterval = wglGetProcAddress(null, "wglSwapIntervalEXT");
-        if (swapInterval != 0L) {
-            callI(attribs.swapInterval, swapInterval);
+        if (swapInterval == 0L) {
+            throw new AWTException("WGL_EXT_swap_control available but wglSwapIntervalEXT is NULL");
+        }
+        if (callI(attribs.swapInterval, swapInterval) == 0) {
+            throw new AWTException("Failed to configure swap interval");
         }
     }
 
@@ -635,9 +638,13 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
     }
 
     private static void wglNvSwapGroupAndBarrier(GLData attribs, long bufferAddr, long hDC) throws AWTException {
-        int success;
         long wglQueryMaxSwapGroupsNVAddr = wglGetProcAddress(null, "wglQueryMaxSwapGroupsNV");
-        success = callPPPI(hDC, bufferAddr, bufferAddr + 4, wglQueryMaxSwapGroupsNVAddr);
+        if (wglQueryMaxSwapGroupsNVAddr == 0L) {
+            throw new AWTException("WGL_NV_swap_group available but wglQueryMaxSwapGroupsNV is NULL");
+        }
+        if (callPPPI(hDC, bufferAddr, bufferAddr + 4, wglQueryMaxSwapGroupsNVAddr) == 0) {
+            throw new AWTException("Failed to query maximum swap groups and barriers");
+        }
         int maxGroups = memGetInt(bufferAddr);
         if (maxGroups < attribs.swapGroupNV) {
             throw new AWTException("Swap group exceeds maximum group index");
@@ -651,7 +658,7 @@ public class PlatformWin32GLCanvas implements PlatformGLCanvas {
             if (wglJoinSwapGroupNVAddr == 0L) {
                 throw new AWTException("WGL_NV_swap_group available but wglJoinSwapGroupNV is NULL");
             }
-            success = callPI(hDC, attribs.swapGroupNV, wglJoinSwapGroupNVAddr);
+            int success = callPI(hDC, attribs.swapGroupNV, wglJoinSwapGroupNVAddr);
             if (success == 0) {
                 throw new AWTException("Failed to join swap group");
             }
