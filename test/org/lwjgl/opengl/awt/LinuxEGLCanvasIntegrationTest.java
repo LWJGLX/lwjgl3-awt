@@ -12,9 +12,15 @@ import java.awt.Dimension;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.lwjgl.egl.EGL10.EGL_NO_CONTEXT;
+import static org.lwjgl.egl.EGL10.EGL_NO_DISPLAY;
+import static org.lwjgl.egl.EGL10.EGL_VERSION;
+import static org.lwjgl.egl.EGL10.eglQueryString;
+import static org.lwjgl.egl.EGL14.eglGetCurrentDisplay;
 import static org.lwjgl.egl.EGL14.eglGetCurrentContext;
 
 @EnabledOnOs(OS.LINUX)
@@ -70,6 +76,35 @@ class LinuxEGLCanvasIntegrationTest {
                 GL.setCapabilities(null);
                 dispose(firstFrameRef.get());
                 dispose(secondFrameRef.get());
+            });
+        }
+    }
+
+    @Test
+    void leavesTheSharedDisplayInitializedAfterTheLastCanvasIsDisposed() throws Exception {
+        assumeEGLIsSelected();
+
+        AtomicReference<JFrame> frameRef = new AtomicReference<>();
+        AtomicReference<TestCanvas> canvasRef = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() ->
+                createFrame("Shared Linux EGL display", frameRef, canvasRef));
+
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                TestCanvas canvas = canvasRef.get();
+                canvas.render();
+                long display = canvas.lastCurrentDisplay;
+                assertNotEquals(EGL_NO_DISPLAY, display);
+
+                GL.setCapabilities(null);
+                frameRef.get().dispose();
+
+                assertNotNull(eglQueryString(display, EGL_VERSION));
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(() -> {
+                GL.setCapabilities(null);
+                dispose(frameRef.get());
             });
         }
     }
@@ -143,6 +178,7 @@ class LinuxEGLCanvasIntegrationTest {
 
     private static final class TestCanvas extends AWTGLCanvas {
         private static final long serialVersionUID = 1L;
+        private long lastCurrentDisplay = EGL_NO_DISPLAY;
 
         private TestCanvas() {
         }
@@ -160,6 +196,7 @@ class LinuxEGLCanvasIntegrationTest {
         public void paintGL() {
             assertTrue(context != EGL_NO_CONTEXT);
             assertEquals(context, eglGetCurrentContext());
+            lastCurrentDisplay = eglGetCurrentDisplay();
             swapBuffers();
         }
     }
