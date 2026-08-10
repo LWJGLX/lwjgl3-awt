@@ -71,6 +71,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	public long drawable;
 	public JAWTDrawingSurface ds;
 	private Canvas canvas;
+	private Thread drawingSurfaceThread;
 
 	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
 		int screen = X11.XDefaultScreen(display);
@@ -130,7 +131,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		try {
 			populateEffectiveGLXAttribs(display, fbConfigs.get(0), effective);
 
-			if (!makeCurrent(context)) {
+			if (!glXMakeCurrent(display, drawable, context)) {
 				throw new AWTException("Unable to make context current");
 			}
 			// Mesa resolves an implicit GLX drawable while binding it, so configure the
@@ -143,7 +144,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			initialized = true;
 			return context;
 		} finally {
-			makeCurrent(0 /* no context */);
+			glXMakeCurrent(display, 0L, 0L);
 			if (!initialized) {
 				glXDestroyContext(display, context);
 			}
@@ -176,6 +177,12 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public void lock() throws AWTException {
+		if (ds != null) {
+			throw new AWTException("JAWT drawing surface is already locked");
+		}
+		if (canvas == null) {
+			throw new AWTException("Canvas has not been created or was disposed");
+		}
 		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
 		if (ds == null) {
 			throw new AWTException("Failed to get JAWT drawing surface");
@@ -186,6 +193,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 			throw new AWTException("JAWT_DrawingSurface_Lock() failed");
 		}
 		this.ds = ds;
+		this.drawingSurfaceThread = Thread.currentThread();
 	}
 
 	public void unlock() throws AWTException {
@@ -193,11 +201,15 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		if (ds == null) {
 			throw new AWTException("JAWT drawing surface is not locked");
 		}
+		if (drawingSurfaceThread != Thread.currentThread()) {
+			throw new AWTException("JAWT drawing surface must be unlocked by the thread that locked it");
+		}
+		this.ds = null;
+		this.drawingSurfaceThread = null;
 		try {
 			JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
 		} finally {
 			JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
-			this.ds = null;
 		}
 	}
 
@@ -205,12 +217,18 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		GLUtil.validateAttributes(attribs);
 		this.canvas = canvas;
 		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
+		if (ds == null) {
+			throw new AWTException("Failed to get JAWT drawing surface");
+		}
 		try {
 			int lock = JAWT_DrawingSurface_Lock(ds, ds.Lock());
 			if ((lock & JAWT_LOCK_ERROR) != 0)
 				throw new AWTException("JAWT_DrawingSurface_Lock() failed");
 			try {
 				JAWTDrawingSurfaceInfo dsi = JAWT_DrawingSurface_GetDrawingSurfaceInfo(ds, ds.GetDrawingSurfaceInfo());
+				if (dsi == null) {
+					throw new AWTException("Failed to get JAWT drawing surface information");
+				}
 				try {
 					JAWTX11DrawingSurfaceInfo dsiWin = JAWTX11DrawingSurfaceInfo.create(dsi.platformInfo());
 					int depth = dsiWin.depth();
@@ -234,9 +252,19 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public boolean makeCurrent(long context) {
+		requireLockedDrawingSurface();
 		if (context == 0L)
 			return glXMakeCurrent(display, 0L, 0L);
 		return glXMakeCurrent(display, drawable, context);
+	}
+
+	private void requireLockedDrawingSurface() {
+		if (ds == null) {
+			throw new IllegalStateException("The JAWT drawing surface must be locked for this operation");
+		}
+		if (drawingSurfaceThread != Thread.currentThread()) {
+			throw new IllegalStateException("JAWT drawing surface is locked by another thread");
+		}
 	}
 
 	public boolean isCurrent(long context) {

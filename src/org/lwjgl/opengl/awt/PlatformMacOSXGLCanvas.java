@@ -57,6 +57,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     public JAWTDrawingSurface ds;
     private Canvas canvas;
+    private Thread drawingSurfaceThread;
     private long view;
     private long interLayer;
     private long surfaceLayer;
@@ -610,6 +611,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     @Override
     public boolean makeCurrent(long context) {
+        requireLockedDrawingSurface();
         if (CGLSetCurrentContext(context) != kCGLNoError) {
             return false;
         }
@@ -643,6 +645,15 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             }
         }
         return true;
+    }
+
+    private void requireLockedDrawingSurface() {
+        if (ds == null) {
+            throw new IllegalStateException("The JAWT drawing surface must be locked for this operation");
+        }
+        if (drawingSurfaceThread != Thread.currentThread()) {
+            throw new IllegalStateException("JAWT drawing surface is locked by another thread");
+        }
     }
 
     private void updateLayerBounds(int[] bounds) {
@@ -713,6 +724,12 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
 
     @Override
     public void lock() throws AWTException {
+        if (ds != null) {
+            throw new AWTException("JAWT drawing surface is already locked");
+        }
+        if (canvas == null) {
+            throw new AWTException("Canvas has not been created or was disposed");
+        }
         JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
         if (ds == null) {
             throw new AWTException("Failed to get JAWT drawing surface");
@@ -723,6 +740,7 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
             throw new AWTException("JAWT_DrawingSurface_Lock() failed");
         }
         this.ds = ds;
+        this.drawingSurfaceThread = Thread.currentThread();
     }
 
     @Override
@@ -731,11 +749,15 @@ public class PlatformMacOSXGLCanvas implements PlatformGLCanvas {
         if (ds == null) {
             throw new AWTException("JAWT drawing surface is not locked");
         }
+        if (drawingSurfaceThread != Thread.currentThread()) {
+            throw new AWTException("JAWT drawing surface must be unlocked by the thread that locked it");
+        }
+        this.ds = null;
+        this.drawingSurfaceThread = null;
         try {
             JAWT_DrawingSurface_Unlock(ds, ds.Unlock());
         } finally {
             JAWT_FreeDrawingSurface(ds, awt.FreeDrawingSurface());
-            this.ds = null;
         }
     }
 
