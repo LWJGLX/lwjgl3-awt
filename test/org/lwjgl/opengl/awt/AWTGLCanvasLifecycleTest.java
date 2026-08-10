@@ -432,6 +432,51 @@ class AWTGLCanvasLifecycleTest {
     }
 
     @Test
+    void swapBuffersRejectsCallsAfterContextDisposal() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        TestCanvas canvas = new TestCanvas(platform);
+        canvas.context = 42L;
+        canvas.disposeCanvas();
+        platform.calls.clear();
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::swapBuffers);
+
+        assertEquals("OpenGL context has not been created or was disposed", failure.getMessage());
+        assertTrue(platform.calls.isEmpty());
+    }
+
+    @Test
+    void swapBuffersRejectsCallsDuringContextDisposal() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        AtomicReference<IllegalStateException> failureRef = new AtomicReference<>();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void disposeGL() {
+                failureRef.set(assertThrows(IllegalStateException.class, this::swapBuffers));
+            }
+        };
+        canvas.context = 42L;
+
+        canvas.disposeCanvas();
+
+        assertEquals("Canvas is being disposed", failureRef.get().getMessage());
+        assertFalse(platform.calls.contains("swapBuffers"));
+    }
+
+    @Test
+    void swapBuffersRejectsCallsWhenTheCanvasContextIsNotCurrent() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        TestCanvas canvas = new TestCanvas(platform);
+        canvas.render();
+        platform.calls.clear();
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, canvas::swapBuffers);
+
+        assertEquals("OpenGL context must be current before swapping buffers", failure.getMessage());
+        assertTrue(platform.calls.isEmpty());
+    }
+
+    @Test
     void renderUnlocksDrawingSurfaceWhenPaintingFails() {
         RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
         TestCanvas canvas = new TestCanvas(platform) {
