@@ -644,9 +644,6 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
             DisplayRef created = new DisplayRef(eglDisplay, capabilities);
             DISPLAY_REFS.put(eglDisplay, created);
             return created;
-        } catch (AWTException | RuntimeException | Error failure) {
-            eglTerminate(eglDisplay);
-            throw failure;
         }
     }
 
@@ -672,7 +669,9 @@ public class PlatformLinuxEGLCanvas implements PlatformGLCanvas {
     private static synchronized void releaseDisplay(DisplayRef ref) {
         if (--ref.references == 0) {
             DISPLAY_REFS.remove(ref.eglDisplay);
-            eglTerminate(ref.eglDisplay);
+            // EGLDisplay initialization is process-wide rather than reference-counted. Calling eglTerminate here
+            // would invalidate contexts and surfaces owned by another toolkit that uses the same native display.
+            // Leave termination to process teardown; removing our Java-side entry still releases its capabilities.
         }
     }
 
