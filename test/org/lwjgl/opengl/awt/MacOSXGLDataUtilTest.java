@@ -144,6 +144,23 @@ class MacOSXGLDataUtilTest {
     }
 
     @Test
+    void highestIgnoresConfiguredVersionAboveMacOSMaximum() throws Exception {
+        GLData data = new GLData();
+        data.majorVersion = 4;
+        data.minorVersion = 6;
+        data.profile = GLData.Profile.CORE;
+        data.versionPolicy = GLData.VersionPolicy.HIGHEST;
+
+        MacOSXGLDataUtil.validateAttributes(data);
+        MacOSXGLDataUtil.PixelFormatSelection selection = MacOSXGLDataUtil.choosePixelFormat(
+                data, attributes -> 42L);
+
+        assertEquals(42L, selection.pixelFormat);
+        assertTrue(containsPair(selection.attributes,
+                NS_OPENGL_PFA_OPENGL_PROFILE, NS_OPENGL_PROFILE_4_1_CORE));
+    }
+
+    @Test
     void rejectsOptionsThatNSOpenGLCannotHonor() {
         assertUnsupported(data -> data.api = GLData.API.GLES, "OpenGL ES");
         assertUnsupported(data -> data.debug = true, "debug");

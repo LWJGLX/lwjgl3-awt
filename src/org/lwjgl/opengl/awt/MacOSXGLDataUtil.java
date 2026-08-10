@@ -55,7 +55,8 @@ final class MacOSXGLDataUtil {
         if (data.profile == GLData.Profile.COMPATIBILITY) {
             throw new AWTException("macOS NSOpenGL does not support compatibility profiles newer than OpenGL 2.1");
         }
-        if (data.majorVersion > 4 || (data.majorVersion == 4 && data.minorVersion > 1)) {
+        if (data.versionPolicy != GLData.VersionPolicy.HIGHEST
+                && (data.majorVersion > 4 || (data.majorVersion == 4 && data.minorVersion > 1))) {
             throw new AWTException("macOS NSOpenGL supports OpenGL versions up to 4.1");
         }
     }
