@@ -31,6 +31,7 @@ import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 
 import static java.nio.ByteOrder.nativeOrder;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -120,6 +121,32 @@ class MacOSXGLCanvasLifecycleTest {
             assertTrue(canvas.surfaceBackingSizeEnabled);
             assertEquals(canvas.getFramebufferWidth(), canvas.surfaceBackingWidth);
             assertEquals(canvas.getFramebufferHeight(), canvas.surfaceBackingHeight);
+        } finally {
+            SwingUtilities.invokeAndWait(state.frame::dispose);
+        }
+    }
+
+    @Test
+    void rejectsDrawingSurfaceLifecycleMisuse() throws Exception {
+        FrameState state = showSingleCanvas();
+        try {
+            renderCanvases(state);
+            SwingUtilities.invokeAndWait(() -> {
+                TestCanvas canvas = state.canvases[0];
+                PlatformMacOSXGLCanvas platform = (PlatformMacOSXGLCanvas) canvas.platformCanvas;
+
+                IllegalStateException unlocked = assertThrows(
+                        IllegalStateException.class, () -> platform.makeCurrent(canvas.context));
+                assertTrue(unlocked.getMessage().contains("must be locked"));
+
+                assertDoesNotThrow(platform::lock);
+                try {
+                    AWTException nested = assertThrows(AWTException.class, platform::lock);
+                    assertTrue(nested.getMessage().contains("already locked"));
+                } finally {
+                    assertDoesNotThrow(platform::unlock);
+                }
+            });
         } finally {
             SwingUtilities.invokeAndWait(state.frame::dispose);
         }
