@@ -92,9 +92,17 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		attrib_list.put(0);
 		attrib_list.flip();
 		PointerBuffer fbConfigs = glXChooseFBConfig(display, screen, attrib_list);
-		if (fbConfigs == null || fbConfigs.capacity() == 0) {
-			// No framebuffer configurations supported!
-			throw new AWTException("No supported framebuffer configurations found");
+		long fbConfig;
+		try {
+			if (fbConfigs == null || fbConfigs.capacity() == 0) {
+				// No framebuffer configurations supported!
+				throw new AWTException("No supported framebuffer configurations found");
+			}
+			fbConfig = fbConfigs.get(0);
+		} finally {
+			if (fbConfigs != null) {
+				X11.XFree(fbConfigs);
+			}
 		}
 
 		GLXSwapInterval swapInterval = verifyGLXCapabilities(extensions, attribs);
@@ -113,7 +121,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		
 		long context = 0L;
 		for (GLUtil.ContextVersion version : candidates) {
-			context = tryCreateContext(fbConfigs.get(0), share_context,
+			context = tryCreateContext(fbConfig, share_context,
 					bufferGLAttribs(attribs, version));
 			if (context != 0L) {
 				break;
@@ -129,7 +137,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 
 		boolean initialized = false;
 		try {
-			populateEffectiveGLXAttribs(display, fbConfigs.get(0), effective);
+			populateEffectiveGLXAttribs(display, fbConfig, effective);
 
 			if (!glXMakeCurrent(display, drawable, context)) {
 				throw new AWTException("Unable to make context current");
