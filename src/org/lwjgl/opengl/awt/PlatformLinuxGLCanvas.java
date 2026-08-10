@@ -73,9 +73,6 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	private Canvas canvas;
 
 	private long create(int depth, GLData attribs, GLData effective) throws AWTException {
-		if (attribs.versionPolicy != GLData.VersionPolicy.EXACT) {
-			GLUtil.validateVersionAttributes(attribs);
-		}
 		int screen = X11.XDefaultScreen(display);
 		Set<String> extensions = GLXSwapInterval.parseExtensions(
 				glXQueryExtensionsString(display, screen));
@@ -205,6 +202,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 	}
 
 	public long create(Canvas canvas, GLData attribs, GLData effective) throws AWTException {
+		GLUtil.validateAttributes(attribs);
 		this.canvas = canvas;
 		JAWTDrawingSurface ds = JAWT_GetDrawingSurface(canvas, awt.GetDrawingSurface());
 		try {
