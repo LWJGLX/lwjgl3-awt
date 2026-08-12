@@ -148,7 +148,7 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 				swapInterval.apply(display, drawable);
 			}
 			effective.versionPolicy = attribs.versionPolicy;
-			populateEffectiveGLAttribs(effective);
+			populateEffectiveGLAttribs(attribs, effective);
 			initialized = true;
 			return context;
 		} finally {
@@ -468,37 +468,27 @@ public class PlatformLinuxGLCanvas implements PlatformGLCanvas {
 		effective.doubleBuffer = buffer.get(0) == 1;
 	}
 
-	private static void populateEffectiveGLAttribs(GLData effective) throws AWTException {
+	private static void populateEffectiveGLAttribs(GLData requested, GLData effective) throws AWTException {
 		long glGetIntegerv = GL.getFunctionProvider().getFunctionAddress("glGetIntegerv");
 		long glGetString = GL.getFunctionProvider().getFunctionAddress("glGetString");
 		APIVersion version = APIUtil.apiParseVersion(getString(GL11.GL_VERSION, glGetString));
 
+		effective.api = requested.api;
 		effective.majorVersion = version.major;
 		effective.minorVersion = version.minor;
 
-		int profileFlags = getInteger(GL32.GL_CONTEXT_PROFILE_MASK, glGetIntegerv);
-
-		if ((profileFlags & GLX_CONTEXT_ES_PROFILE_BIT_EXT) != 0) {
-			effective.api = GLData.API.GLES;
-		} else {
-			effective.api = GLData.API.GL;
+		if (requested.api == GLData.API.GL && GLUtil.atLeast32(version.major, version.minor)) {
+			int profileFlags = getInteger(GL32.GL_CONTEXT_PROFILE_MASK, glGetIntegerv);
+			if ((profileFlags & GL32.GL_CONTEXT_CORE_PROFILE_BIT) != 0) {
+				effective.profile = GLData.Profile.CORE;
+			} else if ((profileFlags & GL32.GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0) {
+				effective.profile = GLData.Profile.COMPATIBILITY;
+			} else if (profileFlags != 0) {
+				throw new AWTException("Unknown profile " + profileFlags);
+			}
 		}
 
 		if (version.major >= 3) {
-			if (version.major >= 4 || version.minor >= 2) {
-				if ((profileFlags & GL32.GL_CONTEXT_CORE_PROFILE_BIT) != 0) {
-					effective.profile = GLData.Profile.CORE;
-				} else if ((profileFlags & GL32.GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0) {
-					effective.profile = GLData.Profile.COMPATIBILITY;
-				} else if (
-						(profileFlags & GLX_CONTEXT_ES_PROFILE_BIT_EXT) != 0) {
-					// OpenGL ES allows checking for profiles at versions below 3.2, so avoid branching into
-					// the if and actually check later.
-				} else if (profileFlags != 0) {
-					throw new AWTException("Unknown profile " + profileFlags);
-				}
-			}
-
 			int effectiveContextFlags = getInteger(GL30.GL_CONTEXT_FLAGS, glGetIntegerv);
 			effective.debug = (effectiveContextFlags & GL43.GL_CONTEXT_FLAG_DEBUG_BIT) != 0;
 			effective.forwardCompatible =
