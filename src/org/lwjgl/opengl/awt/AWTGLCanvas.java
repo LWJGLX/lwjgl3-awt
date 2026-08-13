@@ -333,6 +333,36 @@ public abstract class AWTGLCanvas extends Canvas {
         }
     }
 
+    /**
+     * Forwards AWT update events without clearing the OpenGL framebuffer.
+     */
+    @Override
+    public void update(Graphics graphics) {
+        paint(graphics);
+    }
+
+    /**
+     * Converts an AWT paint event into an application-controlled render request.
+     *
+     * <p>The callback runs on AWT's event-dispatch thread. Its default implementation does nothing, preserving the
+     * explicit rendering model. Applications that render on demand can override {@link #requestRender()} to enqueue a
+     * render on their GL thread. Calling {@link #render()} directly is also possible when all OpenGL access, including
+     * capability creation, is intentionally performed on the event-dispatch thread.</p>
+     */
+    @Override
+    public void paint(Graphics graphics) {
+        requestRender();
+    }
+
+    /**
+     * Invoked on AWT's event-dispatch thread when this canvas needs to be redrawn.
+     *
+     * <p>The default implementation is a no-op. Implementations should return promptly; applications with a dedicated
+     * render thread should signal or enqueue work for that thread.</p>
+     */
+    protected void requestRender() {
+    }
+
     private void afterRender(Throwable callbackFailure) {
         try {
             afterRender();
@@ -363,7 +393,7 @@ public abstract class AWTGLCanvas extends Canvas {
     public abstract void initGL();
 
     /**
-     * Will be called whenever the {@link Canvas} needs to paint itself.
+     * Called by {@link #render()} while this canvas's OpenGL context is current.
      */
     public abstract void paintGL();
 

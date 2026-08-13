@@ -34,6 +34,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AWTGLCanvasLifecycleTest {
 
     @Test
+    void paintAndUpdateRequestRenderingWithoutUsingTheOpenGLContext() {
+        RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
+        AtomicInteger requests = new AtomicInteger();
+        TestCanvas canvas = new TestCanvas(platform) {
+            @Override
+            protected void requestRender() {
+                requests.incrementAndGet();
+            }
+        };
+
+        canvas.paint(null);
+        canvas.update(null);
+
+        assertEquals(2, requests.get());
+        assertTrue(platform.calls.isEmpty());
+    }
+
+    @Test
     void initializesFramebufferSizeFromDrawingSurfaceBeforeInitGL() {
         RecordingPlatformCanvas platform = new RecordingPlatformCanvas();
         platform.framebufferWidth = 640;
