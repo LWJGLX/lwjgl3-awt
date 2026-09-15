@@ -19,10 +19,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-<<<<<<< HEAD
 import java.util.concurrent.atomic.AtomicBoolean;
-=======
->>>>>>> 5b4437b (Request redraws from AWT paint events)
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
