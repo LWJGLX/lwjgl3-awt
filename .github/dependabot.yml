@@ -18,5 +18,9 @@ updates:
       maven:
         patterns:
           - "*"
+    ignore:
+      # JUnit 6 requires Java 17, but tests still run on JDK 8.
+      - dependency-name: "org.junit.jupiter:*"
+        update-types: ["version-update:semver-major"]
     cooldown:
       default-days: 7
